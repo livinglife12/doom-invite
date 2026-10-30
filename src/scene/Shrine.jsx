@@ -10,23 +10,26 @@ import { director, FF_WINDOWS } from '../director'
 import { SHRINE_POS, FF_MEMBER_X } from '../config/layout'
 import { shrineMats, burnable } from '../lib/materials'
 import { clippingCanvas, toTexture, plaqueCanvas, emblemTexture } from '../lib/textures'
-import { makeEmitter, makeBolt } from '../lib/particles'
-import { clamp, seg, smooth } from '../lib/util'
-import { particleScale } from '../lib/quality'
+import { makeEmitter } from '../lib/particles'
+import { seg, smooth } from '../lib/util'
+import { useDestruction, DestructionFX } from './AltarDestruction'
 import { Projector, HOLOS, Figurine } from './Holograms'
 import { RELICS, ButtonModel } from './Relics'
 
-const box = (pos, size, mat, extra = {}) => (
-  <mesh position={pos} material={mat} castShadow receiveShadow {...extra}>
+const box = (pos, size, mat, { key, ...extra } = {}) => (
+  <mesh key={key} position={pos} material={mat} castShadow receiveShadow {...extra}>
     <boxGeometry args={size} />
   </mesh>
 )
 
-function useShrineCore(i) {
+function useShrineCore(i, cfg) {
   const rt = world.shrines[i]
   const burnMats = useMemo(() => [], [])
   const M = useMemo(() => {
     const m = shrineMats()
+    const accents = { strange: '#bc8552', loki: '#c9a652', thor: '#9faabd', ironman: '#9c4640', cap: '#738aab', hulk: '#76815a', panther: '#9882ac', spider: '#a55b56', ff: '#6b97bc' }
+    m.gold.color.set(accents[cfg.id] || '#b8924a')
+    m.glow.emissive.set(cfg.color)
     burnMats.push(...Object.values(m))
     return m
   }, [])
@@ -133,7 +136,8 @@ function burnMatsPush(list, mat) {
 
 function Plaque({ title, line, burnMats, position, width = 0.8 }) {
   const mat = useMemo(() => {
-    const m = new THREE.MeshStandardMaterial({ map: toTexture(plaqueCanvas(title, line)), metalness: 0.4, roughness: 0.4, emissive: '#ffffff', emissiveMap: toTexture(plaqueCanvas(title, line)), emissiveIntensity: 0.25 })
+    const texture = toTexture(plaqueCanvas(title, line))
+    const m = new THREE.MeshStandardMaterial({ map: texture, metalness: 0.4, roughness: 0.4, emissive: '#ffffff', emissiveMap: texture, emissiveIntensity: 0.25 })
     burnable(m)
     burnMats.push(m)
     return m
@@ -171,67 +175,6 @@ function useUnfurlDust(rt, width) {
   return dust
 }
 
-// Doom's strike: ribbon lightning, white-hot embers that cool to red, rising smoke and a green flash.
-// Also drives every burnable material in the shrine and topples its architecture.
-const _a = new THREE.Vector3()
-const _b = new THREE.Vector3()
-function useDestruction(rt, burnMats, fallers, scale, quality) {
-  const fx = useMemo(() => {
-    const ps = particleScale(quality)
-    const embers = makeEmitter(Math.floor(420 * ps), { color: '#fff1c4', colorEnd: '#c2200a', size: 0.06, sizeEnd: 0.4 })
-    const doom = makeEmitter(Math.floor(220 * ps), { color: '#d8ffe2', colorEnd: '#1f9a45', size: 0.09, sizeEnd: 0.2 })
-    const smoke = makeEmitter(Math.floor(70 * ps), { color: '#2a2c2b', colorEnd: '#0b0c0c', size: 1.2, sizeEnd: 3, additive: false, soft: 2.2, opacity: 0.55 })
-    const bolts = [0, 1, 2, 3].map(() => makeBolt('#9dffbe', 18, 0.09))
-    return { embers, doom, smoke, bolts }
-  }, [])
-  useFrame((s, dt) => {
-    const b = rt.burn
-    const t = s.clock.elapsedTime
-    for (let k = 0; k < burnMats.length; k++) {
-      const u = burnMats[k].userData.uBurn
-      if (u) u.value = clamp(b * 1.1 - (k % 5) * 0.02)
-    }
-    const f = smooth(0.15, 1, b)
-    fallers.forEach((r, k) => {
-      if (!r.current) return
-      const g = r.current
-      const d = g.userData
-      if (!d.base) d.base = { p: g.position.clone(), r: g.rotation.clone() }
-      g.position.set(d.base.p.x, d.base.p.y - f * f * (0.6 + k * 0.3), d.base.p.z)
-      g.rotation.set(d.base.r.x + f * f * (k % 2 ? 0.5 : -0.4), d.base.r.y, d.base.r.z + f * f * (k % 2 ? -0.7 : 0.7))
-    })
-    const active = b > 0.001 && b < 0.999
-    fx.bolts.forEach((bo, k) => {
-      bo.line.visible = active && b < 0.55 && Math.random() < 0.55
-      if (bo.line.visible) bo.set(_a.set((k - 1.5) * 0.5 * scale, 7.5, 1.6), _b.set((Math.random() - 0.5) * 2.4 * scale, 0.6 + Math.random() * 2.4, (Math.random() - 0.6) * 1.2), 0.7)
-    })
-    if (active) {
-      const heat = Math.sin(b * Math.PI)
-      const n = Math.ceil(dt * 200 * heat)
-      fx.embers.emit(n, () => ({ p: [(Math.random() - 0.5) * 2.8 * scale, Math.random() * 3.2, (Math.random() - 0.6) * 1.8], v: [(Math.random() - 0.5) * 0.7, 0.5 + Math.random() * 1.8, (Math.random() - 0.5) * 0.7], life: 0.9 + Math.random() * 1.6 }))
-      fx.doom.emit(Math.ceil(n * 0.5), () => ({ p: [(Math.random() - 0.5) * 2.4 * scale, Math.random() * 2.6, (Math.random() - 0.6) * 1.4], v: [0, 0.8 + Math.random() * 1.2, 0], life: 0.5 + Math.random() * 0.5 }))
-      if (Math.random() < dt * 14 * heat) fx.smoke.emit(1, () => ({ p: [(Math.random() - 0.5) * 2 * scale, 0.5 + Math.random() * 2, -0.6 + Math.random() * 0.6], v: [(Math.random() - 0.5) * 0.2, 0.5 + Math.random() * 0.4, 0.05], life: 3 + Math.random() * 2 }))
-    }
-    fx.embers.update(dt, { turbulence: 1.4, t, drag: 0.5, gravity: -0.15 })
-    fx.doom.update(dt, { turbulence: 0.6, t })
-    fx.smoke.update(dt, { turbulence: 0.15, t, drag: 0.2 })
-  })
-  return fx
-}
-
-function DestructionFX({ fx }) {
-  return (
-    <>
-      <primitive object={fx.smoke.points} />
-      <primitive object={fx.embers.points} />
-      <primitive object={fx.doom.points} />
-      {fx.bolts.map((b, i) => (
-        <primitive key={i} object={b.line} />
-      ))}
-    </>
-  )
-}
-
 // After destruction the shrine's remains collapse into its sigil, which rises and is claimed.
 function Token({ rt, cfg, position }) {
   const ref = useRef()
@@ -250,9 +193,13 @@ function Token({ rt, cfg, position }) {
   )
 }
 
-function Brazier({ M, position, quality }) {
+function Brazier({ M, position, quality, rt }) {
   const fire = useMemo(() => makeEmitter(quality === 'low' ? 18 : 40, { color: '#fff0b0', colorEnd: '#c2300a', size: 0.14, sizeEnd: 0.35 }), [])
   useFrame((s, dt) => {
+    if (!world.hall.visible || rt.done || rt.unfurl < 0.3 || rt.burn >= 0.95) {
+      if (fire.points.visible) fire.clear()
+      return
+    }
     if (Math.random() < dt * 40) fire.emit(1, () => ({ p: [(Math.random() - 0.5) * 0.12, 0.72, (Math.random() - 0.5) * 0.12], v: [(Math.random() - 0.5) * 0.1, 0.45 + Math.random() * 0.35, (Math.random() - 0.5) * 0.1], life: 0.45 + Math.random() * 0.3 }))
     fire.update(dt, { turbulence: 0.8, t: s.clock.elapsedTime })
   })
@@ -272,12 +219,79 @@ function Brazier({ M, position, quality }) {
   )
 }
 
+// Architectural silhouettes tell the shrines apart before any projection starts.
+function ShrineCrown({ hero, M }) {
+  if (hero === 'strange') return (
+    <group position={[0, 4.12, -0.98]}>
+      <mesh material={M.stone} castShadow><torusGeometry args={[1.42, 0.17, 8, 56]} /></mesh>
+      <mesh material={M.gold}><torusGeometry args={[1.16, 0.035, 5, 56]} /></mesh>
+      {[-1, 1].map(sign => box([sign * 0.53, 0, 0.05], [0.08, 2.2, 0.08], M.gold, { key: sign, rotation: [0, 0, sign * 0.63] }))}
+      {box([0, -0.05, 0.06], [2.4, 0.07, 0.08], M.gold)}
+    </group>
+  )
+  if (hero === 'loki') return (
+    <group position={[0, 4.1, -0.98]}>
+      {box([0, 0, 0], [3.6, 0.22, 0.6], M.gold)}
+      {[-1, 1].map(sign => <group key={sign}>
+        {box([sign * 1.16, 0.55, 0], [0.24, 1.25, 0.4], M.gold, { rotation: [0, 0, sign * -0.4] })}
+        {box([sign * 0.94, 1.25, 0], [0.16, 0.75, 0.32], M.gold, { rotation: [0, 0, sign * 0.3] })}
+      </group>)}
+      {box([0, 0.35, -0.05], [0.4, 0.7, 0.4], M.darkStone)}
+    </group>
+  )
+  if (hero === 'thor') return (
+    <group position={[0, 4.14, -0.98]}>
+      {[0, 1, 2].map(k => box([0, k * 0.3, -k * 0.06], [3.9 - k * 0.8, 0.22, 0.75], k === 1 ? M.gold : M.stone, { key: k }))}
+      {[-1, 1].map(sign => box([sign * 1.18, 0.66, 0.08], [0.13, 1.15, 0.15], M.gold, { key: sign, rotation: [0, 0, sign * 0.5] }))}
+    </group>
+  )
+  if (hero === 'ironman') return (
+    <group position={[0, 4.18, -0.98]}>
+      {box([0, 0, 0], [3.65, 0.65, 0.65], M.metal)}
+      {box([0, 0.36, 0], [3.2, 0.1, 0.7], M.gold)}
+      {[-1.35, -0.9, 0.9, 1.35].map(x => box([x, 0.02, 0.34], [0.17, 0.38, 0.025], M.gold, { key: x, rotation: [0, 0, -0.18] }))}
+      <mesh material={M.glow} position={[0, 0, 0.35]}><torusGeometry args={[0.19, 0.025, 6, 32]} /></mesh>
+    </group>
+  )
+  if (hero === 'cap') return (
+    <group position={[0, 4.17, -0.98]}>
+      {box([0, 0, 0], [3.8, 0.28, 0.65], M.stone)}
+      {box([0, 0.33, 0], [2.9, 0.35, 0.55], M.stone)}
+      {box([0, 0.63, 0], [1.8, 0.25, 0.45], M.gold)}
+      {[-1, 1].map(sign => box([sign * 1.23, 0.17, 0.35], [0.09, 0.53, 0.035], M.gold, { key: sign }))}
+    </group>
+  )
+  if (hero === 'hulk') return (
+    <group position={[0, 4.1, -0.98]}>
+      {[0.65, 1.07, 0.85, 1.22, 0.55].map((h, k) => box([(k - 2) * 0.72, h / 2, 0], [0.65, h, 0.6], k % 2 ? M.darkStone : M.stone, { key: k, rotation: [0, 0, (k - 2) * 0.045] }))}
+    </group>
+  )
+  if (hero === 'panther') return (
+    <group position={[0, 4.15, -0.98]}>
+      {box([0, 0, 0], [3.65, 0.18, 0.6], M.metal)}
+      {[-1, 1].map(sign => <group key={sign}>
+        {box([sign * 0.86, 0.48, 0], [2, 0.17, 0.5], M.gold, { rotation: [0, 0, sign * -0.51] })}
+        {box([sign * 1.44, 0.5, 0.01], [0.18, 1.1, 0.28], M.metal, { rotation: [0, 0, sign * -0.22] })}
+      </group>)}
+    </group>
+  )
+  return (
+    <group position={[0, 4.18, -0.98]}>
+      {box([0, 0, 0], [3.8, 0.2, 0.55], M.metal)}
+      {[-1, 1].map(sign => <group key={sign}>
+        {box([sign * 1.25, 0.52, 0], [0.17, 1.2, 0.35], M.stone)}
+        {box([sign * 0.7, 0.3, 0.1], [1.5, 0.065, 0.08], M.gold, { rotation: [0, 0, sign * 0.5] })}
+      </group>)}
+    </group>
+  )
+}
+
 export function Shrine({ i, cfg, quality }) {
-  const { rt, burnMats, M } = useShrineCore(i)
+  const { rt, burnMats, M } = useShrineCore(i, cfg)
   const P = SHRINE_POS[i]
   const root = useRef()
   const fallers = [useRef(), useRef(), useRef(), useRef()]
-  const fx = useDestruction(rt, burnMats, fallers, 1, quality)
+  const fx = useDestruction(rt, burnMats, fallers, 1, quality, cfg.id)
   const dust = useUnfurlDust(rt, 3.4)
   const Relic = RELICS[cfg.relic]
   const Holo = HOLOS[cfg.holo]
@@ -318,21 +332,13 @@ export function Shrine({ i, cfg, quality }) {
         ))}
         <Rise rt={rt} at={0.26} depth={2.5}>
           <group ref={fallers[1]}>
-            <mesh material={M.stone} position={[0, 4.2, -0.95]} castShadow>
-              <torusGeometry args={[1.68, 0.2, 10, 40, Math.PI]} />
-            </mesh>
-            <mesh material={M.darkStone} position={[0, 4.2, -1.22]}>
-              <circleGeometry args={[1.62, 40, 0, Math.PI]} />
-            </mesh>
-            <mesh material={M.gold} position={[0, 5.92, -0.95]}>
-              <boxGeometry args={[0.32, 0.42, 0.46]} />
-            </mesh>
+            <ShrineCrown hero={cfg.id} M={M} />
           </group>
         </Rise>
         <Rise rt={rt} at={0.34} depth={1.4} spin={1.5}>
           {box([0, 0.68, 0.05], [0.95, 1.0, 0.85], M.darkStone)}
           {box([0, 1.2, 0.05], [1.05, 0.06, 0.95], M.gold)}
-          <Plaque title={cfg.title} line={cfg.epitaph} burnMats={burnMats} position={[0, 0.62, 0.48]} width={0.88} />
+          <Plaque title={cfg.title} burnMats={burnMats} position={[0, 0.62, 0.48]} width={0.88} />
           <group position={[0, 1.23, 0.05]}>
             <Projector rt={rt} color={cfg.color} metal={M.metal}>
               <Holo rt={rt} color={cfg.color} />
@@ -341,19 +347,19 @@ export function Shrine({ i, cfg, quality }) {
         </Rise>
         <Rise rt={rt} at={0.44} depth={1.8}>
           {box([-1.15, 0.83, -0.45], [0.72, 1.3, 0.72], M.stone)}
-          <group position={[-1.15, 1.48, -0.45]}>
+          <group position={[-1.15, 1.48, -0.45]} scale={1.35}>
             <Relic rt={rt} burnMats={burnMats} />
           </group>
         </Rise>
         <Rise rt={rt} at={0.5} depth={1.4}>
           {box([1.15, 0.63, -0.3], [0.6, 0.9, 0.6], M.stone)}
           <group position={[1.15, 1.08, -0.3]} rotation-y={-0.5}>
-            <Figurine mat={M.figurine} hero={cfg.figurine.hero} pose={cfg.figurine.pose} scale={0.42} />
+            <Figurine mat={M.figurine} hero={cfg.figurine.hero} pose={cfg.figurine.pose} scale={0.6} />
           </group>
         </Rise>
         <Rise rt={rt} at={0.56} depth={1}>
-          <Brazier M={M} position={[-1.65, 0.18, 0.95]} quality={quality} />
-          <Brazier M={M} position={[1.65, 0.18, 0.95]} quality={quality} />
+          <Brazier rt={rt} M={M} position={[-1.65, 0.18, 0.95]} quality={quality} />
+          <Brazier rt={rt} M={M} position={[1.65, 0.18, 0.95]} quality={quality} />
         </Rise>
         <Clipping clip={cfg.clippings[0]} seed={i * 10 + 1} rt={rt} burnMats={burnMats} position={[-0.9, 2.85, -1.22]} rotation={[0, 0, 0.06]} delay={0} />
         <Clipping clip={cfg.clippings[1]} seed={i * 10 + 2} rt={rt} burnMats={burnMats} position={[0.9, 2.7, -1.22]} rotation={[0, 0, -0.08]} delay={0.15} />
@@ -368,7 +374,7 @@ export function Shrine({ i, cfg, quality }) {
 
 // The Fantastic Four memorial: four sub-displays around a central obelisk, unfurled from a single button.
 export function TeamShrine({ i, cfg, quality }) {
-  const { rt, burnMats, M: base } = useShrineCore(i)
+  const { rt, burnMats, M: base } = useShrineCore(i, cfg)
   const M = useMemo(() => {
     const fourGlow = burnable(new THREE.MeshStandardMaterial({ color: '#000', emissive: '#4fa8ff', emissiveIntensity: 2.6 }))
     burnMats.push(fourGlow)
@@ -376,8 +382,8 @@ export function TeamShrine({ i, cfg, quality }) {
   }, [])
   const P = SHRINE_POS[i]
   const root = useRef()
-  const fallers = [useRef(), useRef(), useRef(), useRef(), useRef()]
-  const fx = useDestruction(rt, burnMats, fallers, 2.6, quality)
+  const fallers = [useRef(), useRef(), useRef(), useRef(), useRef(), useRef()]
+  const fx = useDestruction(rt, burnMats, fallers, 2.6, quality, cfg.id)
   const dust = useUnfurlDust(rt, 8.6)
   useFrame(() => {
     root.current.visible = !rt.done && Math.abs(camPos.x - P.x) < 30
@@ -407,12 +413,12 @@ export function TeamShrine({ i, cfg, quality }) {
             {box([0.08, 3.3, -0.69], [0.07, 0.52, 0.05], M.fourGlow)}
             {box([0.0, 3.22, -0.69], [0.36, 0.06, 0.05], M.fourGlow)}
             {box([-0.04, 3.385, -0.69], [0.42, 0.06, 0.05], M.fourGlow, { rotation: [0, 0, 0.94] })}
-            <Plaque title={cfg.title} line={cfg.epitaph} burnMats={burnMats} position={[0, 1.4, -0.69]} width={1.0} />
+            <Plaque title={cfg.title} burnMats={burnMats} position={[0, 1.4, -0.69]} width={1.0} />
           </group>
         </Rise>
         {[-4.25, -2.2, 2.2, 4.25].map((x, k) => (
           <Rise key={x} rt={rt} at={0.12 + k * 0.03} depth={5.5}>
-            <group ref={fallers[2 + (k % 3)]} position={[x, 0, -1.4]}>
+            <group ref={fallers[2 + k]} position={[x, 0, -1.4]}>
               {box([0, 2.6, 0], [0.4, 5.0, 0.4], M.stone)}
               {box([0, 5.2, 0], [0.6, 0.2, 0.6], M.gold)}
             </group>
@@ -447,8 +453,8 @@ export function TeamShrine({ i, cfg, quality }) {
         <Clipping clip={cfg.clippings[0]} seed={61} rt={rt} burnMats={burnMats} position={[-1.2, 4.9, -1.64]} rotation={[0, 0, 0.08]} size={[0.6, 0.84]} delay={0.4} />
         <Clipping clip={cfg.clippings[1]} seed={62} rt={rt} burnMats={burnMats} position={[1.2, 4.9, -1.64]} rotation={[0, 0, -0.06]} size={[0.6, 0.84]} delay={0.45} />
         <Rise rt={rt} at={0.6} depth={1}>
-          <Brazier M={M} position={[-3.9, 0.2, 1.0]} quality={quality} />
-          <Brazier M={M} position={[3.9, 0.2, 1.0]} quality={quality} />
+          <Brazier rt={rt} M={M} position={[-3.9, 0.2, 1.0]} quality={quality} />
+          <Brazier rt={rt} M={M} position={[3.9, 0.2, 1.0]} quality={quality} />
         </Rise>
       </group>
       <primitive object={dust.points} />

@@ -71,6 +71,9 @@ export function litAmount(p, spread = 1) {
   const d = _v.length()
   if (d < 0.001) return 0
   _v.divideScalar(d)
-  const ang = Math.acos(Math.min(1, _v.dot(beam.dir)))
-  return Math.max(0, 1 - ang / (beam.angle * spread)) * Math.min(1, beam.on) * Math.min(1, 26 / (d * d + 1))
+  const ang = Math.acos(THREE.MathUtils.clamp(_v.dot(beam.dir), -1, 1))
+  // This is interaction coverage, not photometric intensity (the SpotLight already
+  // handles that). Distant room exhibits must still reach the discovery threshold.
+  const fade = THREE.MathUtils.smoothstep(d, 28, 42)
+  return Math.max(0, 1 - ang / (beam.angle * spread)) * Math.min(1, beam.on) * (1 - fade)
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
-import { Environment, Lightformer, PerformanceMonitor } from '@react-three/drei'
+import { Environment, Lightformer } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette, Noise } from '@react-three/postprocessing'
 import { world } from '../world'
 import { director } from '../director'
@@ -14,64 +14,90 @@ import Hall from './Hall'
 import Collapse from './Collapse'
 import DoomMask from './DoomMask'
 import BurnPage from './BurnPage'
+import { createQualitySampler } from '../lib/quality'
 
-// Seamless playback: behind the black loading veil, briefly make the whole world visible and render it
-// off-screen from each key camera position. That compiles every shader (shadow passes, holograms,
-// lightning, rifts, debris, the burning page) before the show starts, instead of stalling mid-scene.
-const WARM_POSES = [
-  [[0, 1.2, 42.5], [0, 1, 40]],
-  [[0, 1.7, 5.5], [0, 1.4, -12]],
-  [[1.2, 1.75, 4.2], [9, 2.4, 0]],
-  [[12, 1.8, 0], [30, 1.6, 0]],
-  [[34, 1.9, 0], [50, 1.6, 0]],
-  [[58, 1.9, 0], [74, 1.6, 0]],
-  [[84.5, 2.4, 0], [93.5, 1.8, 0]],
-  [[109, 3.3, 0], [117, 3.3, 0]],
-]
+// Show the opening first. The rest of the shaders compile during the introduction,
+// without holding the loading veil until every hidden exhibit is ready.
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()))
 
 async function warmUp(gl, scene, camera, cancelled) {
-  const target = new THREE.WebGLRenderTarget(160, 160)
+  const target = new THREE.WebGLRenderTarget(96, 96, { depthBuffer: true })
   const cam = camera.clone()
   cam.aspect = 1
   cam.fov = 70
   cam.updateProjectionMatrix()
-  await nextFrame()
-  for (const [p, l] of WARM_POSES) {
-    if (cancelled()) break
-    const prev = []
-    scene.traverse((o) => {
-      prev.push(o, o.visible)
-      o.visible = true
-    })
-    cam.position.set(...p)
-    cam.lookAt(...l)
+  const previousTarget = gl.getRenderTarget()
+  const previousFace = gl.getActiveCubeFace()
+  const previousLevel = gl.getActiveMipmapLevel()
+  try {
+    await nextFrame()
+    if (cancelled()) return
+    cam.position.set(0, 1.2, 42.5)
+    cam.lookAt(0, 1, 40)
     cam.updateMatrixWorld()
-    gl.shadowMap.needsUpdate = true
     gl.setRenderTarget(target)
     gl.render(scene, cam)
-    gl.setRenderTarget(null)
-    for (let k = 0; k < prev.length; k += 2) prev[k].visible = prev[k + 1]
-    await nextFrame()
+  } finally {
+    gl.setRenderTarget(previousTarget, previousFace, previousLevel)
+    target.dispose()
   }
-  target.dispose()
+}
+
+function QualityMonitor({ initialQuality }) {
+  const sampler = useRef(null)
+  if (!sampler.current) {
+    const q = new URLSearchParams(window.location.search).get('q')
+    sampler.current = createQualitySampler(initialQuality, { locked: ['low', 'mid', 'high'].includes(q) })
+  }
+  useFrame((_, dt) => {
+    const quality = sampler.current.sample(dt, performance.now(), document.visibilityState !== 'hidden')
+    if (quality) setS({ quality })
+  })
+  return null
 }
 
 export default function World({ quality }) {
   const { gl, scene, camera, get } = useThree()
   const hemi = useRef()
   const [booted, setBooted] = useState(false)
+  const resourceQuality = useRef(quality).current
 
   useEffect(() => {
     if (window.__doom) window.__doom.three = { gl, scene, camera, get }
     let cancelled = false
-    warmUp(gl, scene, camera, () => cancelled).then(async () => {
+    const prepare = async () => {
+      try {
+        await warmUp(gl, scene, camera, () => cancelled)
+      } catch (error) {
+        // A failed optional warm-up must not leave the invitation behind its veil.
+        console.warn('Scene preparation deferred to playback.', error)
+      }
       if (cancelled) return
-      audio.prepare()
+      try { audio.prepare() } catch (error) { console.warn('Audio preparation deferred until interaction.', error) }
       await nextFrame()
+      if (cancelled) return
       director.boot()
+      const params = new URLSearchParams(window.location.search)
+      if (params.has('debug') && params.has('scene')) {
+        try {
+          const { setupReview, seekReview } = await import('../review')
+          if (cancelled) return
+          const hero = params.get('scene')
+          const mode = params.get('mode') || 'holo'
+          setupReview(hero, mode)
+          if (params.has('p')) seekReview(hero, mode, Number(params.get('p')))
+        } catch (error) { console.warn('Debug scene unavailable; the invitation is ready.', error) }
+      }
       setBooted(true)
-    })
+      if (!params.has('debug')) {
+        nextFrame().then(nextFrame).then(() => {
+          if (!cancelled) return gl.compileAsync(scene, camera)
+        }).catch(error => {
+          if (!cancelled) console.warn('Remaining shaders will compile during playback.', error)
+        })
+      }
+    }
+    prepare()
     return () => (cancelled = true)
   }, [])
 
@@ -83,7 +109,7 @@ export default function World({ quality }) {
 
   return (
     <>
-      {booted && <PerformanceMonitor onDecline={() => setS({ quality: quality === 'high' ? 'mid' : 'low' })} />}
+      {booted && <QualityMonitor initialQuality={resourceQuality} />}
       <CameraRig />
       <hemisphereLight ref={hemi} args={['#8f98a8', '#0a0908', 0.02]} />
       <Environment frames={1} resolution={128}>
@@ -92,17 +118,17 @@ export default function World({ quality }) {
         <Lightformer form="rect" intensity={1.2} color="#ffffff" position={[6, 1, 6]} scale={[4, 7, 1]} />
         <Lightformer form="rect" intensity={0.35} color="#ff8a4a" position={[0, -4, 0]} rotation-x={Math.PI / 2} scale={[10, 10, 1]} />
       </Environment>
-      <TVIntro quality={quality} />
-      <ThroneRoom quality={quality} />
-      <Hall quality={quality} />
-      <Collapse quality={quality} />
-      <DoomMask quality={quality} />
-      <BurnPage quality={quality} />
+      <TVIntro quality={resourceQuality} />
+      <ThroneRoom quality={resourceQuality} />
+      <Hall quality={resourceQuality} />
+      <Collapse quality={resourceQuality} />
+      <DoomMask quality={resourceQuality} />
+      <BurnPage quality={resourceQuality} />
       {quality !== 'low' && (
         <EffectComposer multisampling={quality === 'high' ? 4 : 0}>
-          <Bloom mipmapBlur luminanceThreshold={0.72} luminanceSmoothing={0.15} intensity={0.9} radius={0.68} resolutionScale={quality === 'high' ? 0.75 : 0.5} />
-          <Noise opacity={0.045} premultiply />
-          <Vignette darkness={0.78} offset={0.22} />
+          <Bloom mipmapBlur luminanceThreshold={1.1} luminanceSmoothing={0.2} intensity={0.45} radius={0.45} resolutionScale={quality === 'high' ? 0.75 : 0.5} />
+          <Noise opacity={0.018} premultiply />
+          <Vignette darkness={0.48} offset={0.3} />
         </EffectComposer>
       )}
     </>

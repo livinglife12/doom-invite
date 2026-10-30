@@ -8,6 +8,7 @@ export function burnable(mat, edge = '#5dff7a') {
   const uBurn = { value: 0 }
   const uEdge = { value: new THREE.Color(edge) }
   mat.userData.uBurn = uBurn
+  mat.userData.uBurnEdge = uEdge
   mat.onBeforeCompile = (s) => {
     s.uniforms.uBurn = uBurn
     s.uniforms.uEdge = uEdge
@@ -54,7 +55,7 @@ export function shrineMats() {
 
 // Hologram: builds up from the projector (uBuild = world y of the scan front), interlaced scanlines,
 // travelling interference bands, hot fresnel edges, flicker, glitch displacement and noise dissolve.
-export function holoMaterial(color) {
+export function holoMaterial(color, surface = true) {
   return new THREE.ShaderMaterial({
     uniforms: {
       uColor: { value: new THREE.Color(color) },
@@ -66,6 +67,7 @@ export function holoMaterial(color) {
       uBuild: { value: 100 },
       uCorrupt: { value: 0 },
       uGrey: { value: 0 },
+      uSurface: { value: surface ? 1 : 0 },
     },
     vertexShader: /* glsl */ `
       uniform float uTime; uniform float uGlitch;
@@ -81,34 +83,40 @@ export function holoMaterial(color) {
         gl_Position = projectionMatrix * viewMatrix * w;
       }`,
     fragmentShader: /* glsl */ `
-      uniform vec3 uColor; uniform float uTime, uOpacity, uDissolve, uWipe, uBuild, uCorrupt, uGrey;
+      uniform vec3 uColor; uniform float uTime, uOpacity, uDissolve, uWipe, uBuild, uCorrupt, uGrey, uSurface;
       varying vec3 vN; varying vec3 vW; varying vec3 vV;
       ${NOISE}
       void main(){
-        if (vW.y < uWipe || vW.y > uBuild) discard;
+        if (uOpacity < 0.002 || vW.y < uWipe || vW.y > uBuild) discard;
         float n = fbm(vW * 18.0 + vec3(0.0, uTime * 0.5, 0.0));
         float thr = uDissolve * 1.2 - 0.1;
         if (uDissolve > 0.001 && n < thr) discard;
         float facing = clamp(abs(dot(normalize(vN + 1e-5), normalize(vV))), 0.0, 1.0);
         float fr = pow(1.0 - facing, 1.7);
-        float inter = mix(0.55, 1.0, step(0.5, fract(vW.y * 260.0)));
+        float inter = mix(0.87, 1.0, step(0.5, fract(vW.y * 130.0)));
         float band = pow(max(0.0, 1.0 - abs(fract(vW.y * 1.4 - uTime * 0.35) - 0.5) * 2.0), 18.0);
-        float flick = 0.9 + 0.1 * sin(uTime * 41.0) * sin(uTime * 17.0);
+        float flick = 0.97 + 0.03 * sin(uTime * 23.0) * sin(uTime * 11.0);
         float grain = nhash(vec3(gl_FragCoord.xy, floor(uTime * 30.0)));
         vec3 col = mix(uColor, vec3(0.8), uGrey);
         col = mix(col, vec3(0.3, 1.0, 0.5), uCorrupt);
         float edge = uDissolve > 0.001 ? 1.0 - smoothstep(0.0, 0.05, n - thr) : 0.0;
         float wipeEdge = 1.0 - smoothstep(0.0, 0.012, vW.y - uWipe);
         float buildEdge = 1.0 - smoothstep(0.0, 0.02, uBuild - vW.y);
-        float body = (0.1 + fr * 1.35) * inter * flick * (0.85 + grain * 0.3) + band * 0.5;
-        vec3 rgb = col * body + vec3(1.0) * pow(fr, 5.0) * 0.6 + (col + 0.6) * (edge * 1.2 + wipeEdge + buildEdge * 1.5);
-        float a = body + edge * 1.2 + wipeEdge + buildEdge;
+        // A readable reconstruction has a lit core, not just luminous silhouette edges.
+        vec3 normal = normalize(vN + 1e-5);
+        float key = max(0.0, dot(normal, normalize(vec3(-0.45, 0.8, 0.7))));
+        float body = mix(0.08 + fr * 1.1, 0.58 + key * 0.32 + fr * 0.24, uSurface) * inter * flick * (0.97 + grain * 0.06);
+        vec3 rgb = col * body + col * band * 0.12 + vec3(0.55, 0.8, 1.0) * pow(fr, 5.0) * 0.16;
+        rgb += (col + 0.4) * (edge * 1.2 + wipeEdge + buildEdge * 1.5);
+        float a = mix(body, 0.88 + fr * 0.1, uSurface) + edge + wipeEdge + buildEdge;
         gl_FragColor = vec4(rgb, clamp(a * uOpacity, 0.0, 1.0));
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }`,
     transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
+    depthWrite: surface,
+    blending: surface ? THREE.NormalBlending : THREE.AdditiveBlending,
+    side: surface ? THREE.FrontSide : THREE.DoubleSide,
   })
 }
 

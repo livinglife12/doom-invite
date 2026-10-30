@@ -12,6 +12,8 @@ export function buildFigure(mat, o = {}) {
   const root = new THREE.Group()
   const j = {}
   const meshes = []
+  // Named surfaces let each costume use its own palette without changing the animation rig.
+  const surfaces = {}
   const grp = (n, p, pos) => {
     const x = new THREE.Group()
     x.position.set(...pos)
@@ -19,7 +21,7 @@ export function buildFigure(mat, o = {}) {
     j[n] = x
     return x
   }
-  const add = (geo, p, pos, sc, m = mat, rot) => {
+  const add = (geo, p, pos, sc, m = mat, rot, region) => {
     const me = new THREE.Mesh(geo, m)
     me.position.set(...pos)
     if (sc) me.scale.set(...sc)
@@ -27,33 +29,36 @@ export function buildFigure(mat, o = {}) {
     me.castShadow = !!o.shadows
     p.add(me)
     meshes.push(me)
+    if (region) (surfaces[region] || (surfaces[region] = [])).push(me)
     return me
   }
   const hips = grp('hips', root, [0, 0.5, 0])
-  add(pelvis(), hips, [0, -0.02, 0], [b, 1, b])
+  add(pelvis(), hips, [0, -0.02, 0], [b, 1, b], mat, null, 'hips')
   const spine = grp('spine', hips, [0, 0.02, 0])
-  add(torso(), spine, [0, 0, 0], [1.22 * b, 1, 0.78 * b])
-  add(sphere(), spine, [0, 0.3, 0], [0.028, 0.035, 0.028])
+  add(torso(), spine, [0, 0, 0], [1.22 * b, 1, 0.78 * b], mat, null, 'torso')
+  add(sphere(), spine, [0, 0.3, 0], [0.028, 0.035, 0.028], mat, null, 'skin')
   const head = grp('head', spine, [0, 0.33, 0])
-  j.headMesh = add(sphere(), head, [0, 0.07, 0], [0.058, 0.07, 0.064])
-  add(sphere(), head, [0, 0.035, 0.018], [0.045, 0.035, 0.045])
+  const hs = o.headScale || 1
+  head.scale.setScalar(hs)
+  j.headMesh = add(sphere(), head, [0, 0.07, 0], [0.056, 0.071, 0.057], mat, null, 'head')
+  add(sphere(), head, [0, 0.035, 0.012], [0.044, 0.035, 0.044], mat, null, 'head')
   const sh = 0.118 * b
   for (const side of ['l', 'r']) {
     const sx = side === 'l' ? 1 : -1
-    add(sphere(), spine, [sx * sh, 0.27, 0], [0.042 * b, 0.038 * b, 0.04 * b])
+    add(sphere(), spine, [sx * sh, 0.27, 0], [0.042 * b, 0.038 * b, 0.04 * b], mat, null, 'shoulders')
     const S = grp(side + 'Shoulder', spine, [sx * sh, 0.27, 0])
-    add(limb(0.032 * b, 0.026 * b, 0.15), S, [0, -0.08, 0])
+    add(limb(0.032 * b, 0.026 * b, 0.15), S, [0, -0.08, 0], null, mat, null, 'upperArms')
     const E = grp(side + 'Elbow', S, [0, -0.165, 0])
-    add(sphere(), E, [0, 0, 0], [0.025 * b, 0.025 * b, 0.025 * b])
-    add(limb(0.026 * b, 0.02 * b, 0.15), E, [0, -0.08, 0])
-    add(box(), E, [0, -0.18, 0.004], [0.032 * b, 0.05, 0.022 * b])
+    add(sphere(), E, [0, 0, 0], [0.025 * b, 0.025 * b, 0.025 * b], mat, null, 'elbows')
+    add(limb(0.026 * b, 0.02 * b, 0.15), E, [0, -0.08, 0], null, mat, null, 'forearms')
+    add(sphere(), E, [0, -0.18, 0.004], [0.022 * b, 0.034, 0.019 * b], mat, null, 'hands')
     grp(side + 'Hand', E, [0, -0.18, 0])
     const H = grp(side + 'Hip', hips, [sx * 0.058 * b, -0.02, 0])
-    add(limb(0.045 * b, 0.034 * b, 0.21), H, [0, -0.115, 0])
+    add(limb(0.045 * b, 0.034 * b, 0.21), H, [0, -0.115, 0], null, mat, null, 'thighs')
     const K = grp(side + 'Knee', H, [0, -0.23, 0])
-    add(sphere(), K, [0, 0, 0], [0.033 * b, 0.033 * b, 0.033 * b])
-    add(limb(0.034 * b, 0.024 * b, 0.21), K, [0, -0.11, 0])
-    add(box(), K, [0, -0.225, 0.025], [0.04 * b, 0.025, 0.09])
+    add(sphere(), K, [0, 0, 0], [0.03 * b, 0.03 * b, 0.03 * b], mat, null, 'knees')
+    add(limb(0.034 * b, 0.024 * b, 0.21), K, [0, -0.11, 0], null, mat, null, 'shins')
+    add(sphere(), K, [0, -0.215, 0.023], [0.027 * b, 0.026, 0.06], mat, null, 'feet')
   }
   if (o.horns) {
     for (const s of [-1, 1]) {
@@ -63,11 +68,11 @@ export function buildFigure(mat, o = {}) {
         new THREE.Vector3(0.09 * s, 0.25, -0.04),
         new THREE.Vector3(0.065 * s, 0.33, -0.11),
       ])
-      add(taperedTube(curve, 0.014, 0.002), head, [0, 0, 0])
+      add(taperedTube(curve, 0.014, 0.002), head, [0, 0, 0], null, mat, null, 'horns')
     }
   }
   if (o.wings) {
-    for (const s of [-1, 1]) add(wingGeo(), head, [0.06 * s, 0.08, 0], [s, 1, 1])
+    for (const s of [-1, 1]) add(wingGeo(), head, [0.06 * s, 0.08, 0], [s, 1, 1], mat, null, 'wings')
   }
   if (o.rocky) {
     const rock = new THREE.DodecahedronGeometry(1, 0)
@@ -79,6 +84,7 @@ export function buildFigure(mat, o = {}) {
     cape.position.set(0, 0.29, -0.06 * b)
     spine.add(cape)
     meshes.push(cape)
+    surfaces.cape = [cape]
     j.cape = cape
   }
   if (o.collar) {
@@ -86,13 +92,16 @@ export function buildFigure(mat, o = {}) {
     col.position.set(0, 0.34, -0.01)
     spine.add(col)
     meshes.push(col)
+    surfaces.collar = [col]
   }
-  return { root, j, meshes }
+  return { root, j, meshes, surfaces }
 }
 
 const pelvis = () => geoCache.pelvis || (geoCache.pelvis = new THREE.SphereGeometry(1, 14, 10).scale(0.075, 0.06, 0.055))
 const box = () => geoCache.box || (geoCache.box = new THREE.BoxGeometry(1, 1, 1))
-const limb = (r0, r1, l) => geoCache[`l${r0}_${r1}_${l}`] || (geoCache[`l${r0}_${r1}_${l}`] = new THREE.CylinderGeometry(r0, r1, l, 10, 1))
+const limb = (r0, r1, l) => geoCache[`l${r0}_${r1}_${l}`] || (geoCache[`l${r0}_${r1}_${l}`] = new THREE.LatheGeometry([
+  [0, -l / 2], [r1 * 0.85, -l / 2], [r1, -l * 0.35], [r0 * 1.08, l * 0.1], [r0, l * 0.35], [r0 * 0.72, l / 2], [0, l / 2],
+].map(([x, y]) => new THREE.Vector2(x, y)), 12))
 // Lathed torso: narrow waist, broad chest, sloping trapezius.
 const torso = () =>
   geoCache.torso ||

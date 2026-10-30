@@ -91,7 +91,7 @@ function Corrupted() {
         const glow = holoMaterial('#ffffff')
         const echo = holoMaterial('#ff2a3a')
         const f = buildHero(g.hero, mat, { glow })
-        const e = buildHero(g.hero, echo)
+        const e = buildHero(g.hero, echo, { monochrome: true })
         setPose(f.j, g.pose)
         setPose(e.j, i % 2 ? 'kneel' : 'limp')
         f.root.scale.setScalar(2.2)

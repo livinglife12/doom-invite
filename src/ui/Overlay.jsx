@@ -31,12 +31,12 @@ export default function Overlay({ ready }) {
     return () => clearInterval(id)
   }, [s.hint])
 
-  const started = !['loading', 'tv'].includes(s.phase)
+  const started = !['loading', 'tv', 'review'].includes(s.phase)
 
   return (
     <div className="overlay">
       <div className={`veil veil-${s.veil}`} />
-      {!ready && <div className="loading">· · ·</div>}
+      {(!ready || s.phase === 'loading') && <div className="loading" role="status" aria-label="Loading">· · ·</div>}
 
       {s.phase === 'tv' && (
         <button className={`gate ${gateVisible ? 'in' : ''}`} onClick={() => director.powerOnTV()} aria-label="Turn on the television">
@@ -59,11 +59,6 @@ export default function Overlay({ ready }) {
               ' ',
             ])
           })()}
-          {s.sub && s.caption.kind === 'shrine' && (
-            <div key={s.sub} className="subline">
-              {s.sub}
-            </div>
-          )}
         </div>
       )}
 
@@ -88,6 +83,7 @@ export default function Overlay({ ready }) {
 
       {started && !s.ended && (
         <div className="controls">
+          <a className="ctl" href="/models/LICENSES.txt" target="_blank" rel="noreferrer">ASSET CREDITS</a>
           <button
             className="ctl"
             onClick={() => {

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { world } from '../world'
@@ -65,7 +65,7 @@ function Pieces({ items, geometry, material, seed = 1 }) {
   useLayoutEffect(() => write(0, 0), [])
   useFrame((s) => {
     const c = world.hall.collapse
-    if (c === 0 && last.current === 0) return
+    if (!world.hall.visible || (c === last.current && (c === 0 || c >= 0.999))) return
     last.current = c
     write(c, s.clock.elapsedTime)
   })
@@ -122,6 +122,13 @@ export default function Hall({ quality }) {
     const h = world.hall
     const t = clock.elapsedTime
     grp.current.visible = h.visible
+    if (!h.visible) {
+      key.current.intensity = 0
+      holoLight.current.intensity = 0
+      fillA.current.intensity = 0
+      fillB.current.intensity = 0
+      return
+    }
     const c = h.collapse
     const flick = c > 0 ? (Math.random() < c * 0.5 ? Math.random() * 0.3 : 1) : 1
     M.strip.emissiveIntensity = h.lights * 0.8 * flick * (1 - smooth(0.6, 0.9, c))
@@ -129,13 +136,13 @@ export default function Hall({ quality }) {
     key.current.position.lerp(h.keyFrom, 0.08)
     keyTarget.position.lerp(h.keyTarget, 0.08)
     keyTarget.updateMatrixWorld()
-    key.current.intensity = h.keyOn * 45 * (1 - c)
+    key.current.intensity = h.keyOn * 65 * (1 - c)
     holoLight.current.position.copy(h.holoPos)
     holoLight.current.color.copy(h.holoColor)
-    holoLight.current.intensity = h.holoOn * (6 + Math.sin(t * 20) * 1.2)
+    holoLight.current.intensity = h.holoOn * 3.5
     fillA.current.position.set(camera.position.x + 5, 6, -3)
     fillB.current.position.set(camera.position.x - 4, 6, 3)
-    const fi = h.lights * 30 * flick * (1 - c * 0.6)
+    const fi = h.lights * 38 * flick * (1 - c * 0.6)
     fillA.current.intensity = fi
     fillB.current.intensity = fi
     fillA.current.color.copy(green).lerp(red, c * 0.8)
@@ -171,6 +178,35 @@ function Torches({ quality }) {
   const iron = useMemo(() => new THREE.MeshStandardMaterial({ color: '#1c1d1f', metalness: 0.9, roughness: 0.45 }), [])
   const coal = useMemo(() => new THREE.MeshStandardMaterial({ color: '#000', emissive: '#ff7a2a', emissiveIntensity: 2 }), [])
   const fire = useMemo(() => makeEmitter(Math.floor(520 * particleScale(quality)), { color: '#fff1b8', colorEnd: '#b8260a', size: 0.3, sizeEnd: 0.6 }), [])
+  // Twenty fixtures share three draws instead of sixty individual meshes.
+  const fixtures = useMemo(() => {
+    const group = new THREE.Group()
+    const layouts = [
+      [new THREE.BoxGeometry(0.06, 0.06, 0.45), iron, [0, -0.25, -0.18], -0.6],
+      [new THREE.CylinderGeometry(0.16, 0.08, 0.16, 12, 1, true), iron, [0, 0, 0], 0],
+      [new THREE.SphereGeometry(0.1, 10, 6), coal, [0, 0.04, 0], 0],
+    ]
+    const base = new THREE.Object3D()
+    const local = new THREE.Object3D()
+    const matrix = new THREE.Matrix4()
+    for (const [geometry, material, position, rotationX] of layouts) {
+      const mesh = new THREE.InstancedMesh(geometry, material, TORCHES.length)
+      local.position.set(...position)
+      local.rotation.set(rotationX, 0, 0)
+      local.updateMatrix()
+      TORCHES.forEach(([x, y, z], i) => {
+        base.position.set(x, y, z)
+        base.rotation.set(0, z > 0 ? Math.PI : 0, 0)
+        base.updateMatrix()
+        matrix.multiplyMatrices(base.matrix, local.matrix)
+        mesh.setMatrixAt(i, matrix)
+      })
+      mesh.computeBoundingSphere()
+      group.add(mesh)
+    }
+    return group
+  }, [iron, coal])
+  const emission = useMemo(() => ({ nearby: [], cameraX: Infinity, carry: 0, active: false }), [])
   const halo = useMemo(() => {
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TORCHES.flatMap(([x, y, z]) => [x, y + 0.25, z])), 3))
@@ -179,14 +215,39 @@ function Torches({ quality }) {
     p.frustumCulled = false
     return p
   }, [])
-  useFrame((st, dt) => {
+  useEffect(() => () => {
+    fixtures.traverse(object => object.geometry?.dispose())
+    fire.dispose?.()
+    halo.geometry.dispose()
+    halo.material.dispose()
+    iron.dispose()
+    coal.dispose()
+  }, [fixtures, fire, halo, iron, coal])
+  useFrame((st, rawDt) => {
     const h = world.hall
+    if (!h.visible) {
+      halo.material.opacity = 0
+      coal.emissiveIntensity = 0
+      if (emission.active) { fire.clear?.(); emission.active = false; emission.carry = 0 }
+      return
+    }
+    emission.active = true
+    const dt = Math.min(rawDt, 0.05)
     const live = h.lights * (1 - smooth(0.2, 0.5, h.collapse))
     halo.material.opacity = live * (0.32 + Math.sin(st.clock.elapsedTime * 9) * 0.04)
     coal.emissiveIntensity = 2 * live
     if (live > 0.05) {
-      fire.emit(Math.ceil(dt * 260 * live), () => {
-        const [x, y, z] = TORCHES[(Math.random() * TORCHES.length) | 0]
+      if (Math.abs(st.camera.position.x - emission.cameraX) > 2) {
+        emission.cameraX = st.camera.position.x
+        emission.nearby.length = 0
+        TORCHES.forEach((torch, i) => { if (Math.abs(torch[0] - emission.cameraX) < 22) emission.nearby.push(i) })
+      }
+      emission.carry += dt * 13 * emission.nearby.length * live
+      const count = Math.floor(emission.carry)
+      emission.carry -= count
+      if (count > 0) fire.emit(count, () => {
+        const index = emission.nearby[(Math.random() * emission.nearby.length) | 0]
+        const [x, y, z] = TORCHES[index]
         return { p: [x + (Math.random() - 0.5) * 0.14, y + 0.12, z + (Math.random() - 0.5) * 0.14], v: [(Math.random() - 0.5) * 0.12, 0.55 + Math.random() * 0.4, (Math.random() - 0.5) * 0.12], life: 0.45 + Math.random() * 0.3 }
       })
     }
@@ -194,19 +255,7 @@ function Torches({ quality }) {
   })
   return (
     <group>
-      {TORCHES.map(([x, y, z], k) => (
-        <group key={k} position={[x, y, z]} rotation-y={z > 0 ? Math.PI : 0}>
-          <mesh material={iron} position={[0, -0.25, -0.18]} rotation-x={-0.6}>
-            <boxGeometry args={[0.06, 0.06, 0.45]} />
-          </mesh>
-          <mesh material={iron} position={[0, 0, 0]}>
-            <cylinderGeometry args={[0.16, 0.08, 0.16, 12, 1, true]} />
-          </mesh>
-          <mesh material={coal} position={[0, 0.04, 0]}>
-            <sphereGeometry args={[0.1, 10, 6]} />
-          </mesh>
-        </group>
-      ))}
+      <primitive object={fixtures} />
       <primitive object={fire.points} />
       <primitive object={halo} />
     </group>

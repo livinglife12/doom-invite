@@ -11,6 +11,7 @@ import gsap from 'gsap'
 import { detectQuality } from './lib/quality'
 import World from './scene/World'
 import Overlay from './ui/Overlay'
+import { setupReview, playReview, seekReview } from './review'
 
 export default function Experience() {
   const [ready, setReady] = useState(false)
@@ -19,7 +20,7 @@ export default function Experience() {
   const [shadows, setShadows] = useState(null)
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'production' || location.search.includes('debug')) window.__doom = { useStore, world, director, cam, input, audio, gsap }
+    if (process.env.NODE_ENV !== 'production' || new URLSearchParams(location.search).has('debug')) window.__doom = { useStore, world, director, cam, input, audio, gsap, review: { setupReview, playReview, seekReview } }
     const q = detectQuality()
     setS({ quality: q })
     setShadows(q === 'high')
