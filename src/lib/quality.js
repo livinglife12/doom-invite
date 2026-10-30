@@ -1,46 +1,51 @@
-// 'high' = shadows, bloom, reflective floor; 'mid' = bloom only; 'low' = no post, fewer particles.
-// Override with ?q=low|mid|high.
-export function detectQuality() {
-  const q = new URLSearchParams(window.location.search).get('q')
-  if (q === 'low' || q === 'mid' || q === 'high') return q
-  const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-  const cores = navigator.hardwareConcurrency || 4
-  if (mobile && cores <= 4) return 'low'
-  if (mobile) return 'mid'
-  return 'high'
+export const QUALITY_BUDGETS = Object.freeze({
+  low: Object.freeze({ dpr: 0.8, shadows: false, post: false }),
+  mid: Object.freeze({ dpr: 1, shadows: false, post: false }),
+  high: Object.freeze({ dpr: 1.25, shadows: true, post: true }),
+})
+
+export function qualityForDevice({ search = '', mobile = false, cores = 4 } = {}) {
+  const forced = new URLSearchParams(search).get('q')
+  if (['low', 'mid', 'high'].includes(forced)) return forced
+  return mobile && cores <= 4 ? 'low' : 'mid'
 }
 
-export const particleScale = (q) => (q === 'low' ? 0.4 : q === 'mid' ? 0.7 : 1)
+export function detectQuality() {
+  return qualityForDevice({ search: window.location.search, mobile: /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent), cores: navigator.hardwareConcurrency || 4 })
+}
 
-// Ignore loading, hidden tabs and isolated compilation pauses. Adapt once per visit,
-// with a stable floor; changing quality must not repeatedly rebuild scene resources.
-export function createQualitySampler(initialQuality, { locked = false, startupMs = 8000, sampleMs = 4500, minFps = 28 } = {}) {
-  let started = null
-  let elapsed = 0
-  let frames = 0
-  let settled = locked || initialQuality === 'low'
-  const floor = initialQuality === 'high' ? 'mid' : 'low'
+export const particleScale = q => q === 'low' ? 0.4 : q === 'mid' ? 0.7 : 1
+
+// Step down again after sustained slow playback and a cooldown. Ignore isolated
+// compilation stalls and suspended tabs rather than degrading on one slow frame.
+export function createQualitySampler(initialQuality, { locked = false, startupMs = 2500, sampleMs = 1800, minFps = 38, cooldownMs = 6000 } = {}) {
+  let current = initialQuality, eligibleAt = null, elapsed = 0, frames = 0, slowFrames = 0
   return {
     sample(dt, now, visible = true) {
-      if (settled) return null
-      if (started === null) started = now
-      if (!visible || !Number.isFinite(dt) || dt <= 0 || dt > 0.25) {
-        // Resume with a fresh grace period after a tab suspension or compile stall.
-        started = now
-        elapsed = 0
-        frames = 0
+      if (locked || current === 'low') return null
+      if (!visible || !Number.isFinite(dt) || dt <= 0) {
+        eligibleAt = now + startupMs; elapsed = 0; frames = 0; slowFrames = 0
         return null
       }
-      if (now - started < startupMs) return null
-      elapsed += dt * 1000
-      frames++
+      if (eligibleAt === null) eligibleAt = now + startupMs
+      if (now < eligibleAt) return null
+      if (dt > 0.25) {
+        elapsed = 0; frames = 0
+        if (++slowFrames < 3) return null
+        slowFrames = 0
+        current = current === 'high' ? 'mid' : 'low'
+        eligibleAt = now + cooldownMs
+        return current
+      }
+      slowFrames = 0
+      elapsed += dt * 1000; frames++
       if (elapsed < sampleMs) return null
       const fps = frames * 1000 / elapsed
-      elapsed = 0
-      frames = 0
+      elapsed = 0; frames = 0
       if (fps >= minFps) return null
-      settled = true
-      return floor
+      current = current === 'high' ? 'mid' : 'low'
+      eligibleAt = now + cooldownMs
+      return current
     },
   }
 }

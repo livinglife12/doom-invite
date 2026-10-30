@@ -141,6 +141,7 @@ function ShieldProp() {
   const mats = useShieldMats()
   const p = useMemo(() => new THREE.Vector3(-7.45, 0.75, -3.4), [])
   useFrame((s) => {
+    if (!world.throneVisible) return
     const l = litAmount(p, 1.1)
     light.current.intensity = l * 9 * (0.85 + Math.sin(s.clock.elapsedTime * 3) * 0.15)
   })
@@ -184,6 +185,8 @@ function Helmet() {
 
 
 export function animateCloth(cloth, t, amp, curl = 0.25) {
+  if (t - (cloth.updatedAt ?? -Infinity) < 0.05) return
+  cloth.updatedAt = t
   const p = cloth.g.attributes.position.array
   const b = cloth.base
   for (let i = 0; i < p.length; i += 3) {
@@ -263,6 +266,7 @@ function Papers() {
   }, [])
   const refs = useRef([])
   useFrame((s, dt) => {
+    if (!world.throneVisible) return
     const t = s.clock.elapsedTime
     items.forEach((it, i) => {
       const l = litAmount(it.p)
@@ -290,6 +294,7 @@ function BrokenHolo({ M }) {
     return { mat, f, p: new THREE.Vector3(5.6, 1, -18), on: 0 }
   }, [])
   useFrame((st, dt) => {
+    if (!world.throneVisible) return
     const l = litAmount(s.p, 1.2)
     s.on = l > 0.3 ? 1 : Math.max(0, s.on - dt * 1.5)
     const u = s.mat.uniforms
@@ -353,6 +358,7 @@ function Doors({ M }) {
   const seam = useMemo(() => new THREE.MeshStandardMaterial({ color: '#000', emissive: '#ffb45a', emissiveIntensity: 0.6 }), [])
   const plate = useMemo(() => new THREE.MeshStandardMaterial({ color: '#1a1f1c', metalness: 0.9, roughness: 0.35, map: emblemTexture() }), [])
   useFrame((s) => {
+    if (!world.throneVisible) return
     const o = world.doors.open
     a.current.rotation.y = -o * 1.45
     b.current.rotation.y = o * 1.45
@@ -385,6 +391,7 @@ function Flashlight({ quality }) {
   const target = useMemo(() => new THREE.Object3D(), [])
   const t = useMemo(() => ({ aim: new THREE.Vector3(0, 0.6, -10), desired: new THREE.Vector3(), v2: new THREE.Vector2(), ray: new THREE.Raycaster(), right: new THREE.Vector3(), up: new THREE.Vector3() }), [])
   useFrame(({ camera, clock }, dt) => {
+    if (!world.throneVisible) { beam.on = 0; light.current.intensity = 0; return }
     const f = world.flashlight
     t.v2.set(input.x, input.y)
     t.ray.setFromCamera(t.v2, camera)
@@ -427,7 +434,7 @@ function Flashlight({ quality }) {
         radiusBottom={4.5}
         opacity={0.16}
         intensity={0}
-        volumetric={quality !== 'low'}
+        volumetric={quality === 'high'}
       />
     </>
   )

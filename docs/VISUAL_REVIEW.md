@@ -24,7 +24,9 @@ Both GLBs load through Three.js `GLTFLoader`, retain attribution metadata, have 
 
 `npm run verify:visuals` and `npm run verify:effects` pass. They check character rigs and poses, finite geometry, shared animation uniforms and heads, local model integrity, particle lifecycle and seeded effect behavior. Production browser inspection of the latest changes is reported separately when complete.
 
-Concrete structural reductions are 60 to 3 torch fixture draws, 8 to 1 startup off-screen render, and 12 to 0 active hologram animation callbacks while all exhibits are inactive. A single active exhibit advances its own reconstruction; the Fantastic Four advances its four members.
+Concrete structural reductions are 60 to 3 torch fixture draws, removal of startup off-screen world renders and whole-world shader compilation, and 12 to 0 active hologram animation callbacks while all exhibits are inactive. A single active exhibit advances its own reconstruction; the Fantastic Four advances its four members.
+
+Playback now defaults to balanced DPR 1 without fullscreen postprocessing, MSAA, shadow rendering or a volumetric flashlight. Stage visibility removes inactive lights from Three's lighting passes. Hidden tabs pause rendering, GSAP playback and active audio without resuming previously paused media. Completed shrine-rise transforms stop changing, and cloth updates are limited to 20 Hz. One wide view is retained for every shrine stage and the four-member memorial; close-ups have been removed. `npm run verify:playback` exercises the actual director timelines, desktop/phone projection, quality budgets, staged adaptation, pause ownership and active light selection.
 
 A local CPU particle-helper benchmark used a capacity of 420 and 20,000 updates per case:
 

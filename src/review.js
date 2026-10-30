@@ -5,6 +5,7 @@ import { setS } from './state'
 import { SHRINES } from './config/shrines'
 import { toWorld } from './config/layout'
 import { clamp } from './lib/util'
+import { shrineFrame } from './config/framing'
 
 // Internal scene setup used by development verification. No controls are rendered.
 let reviewTween = null
@@ -70,10 +71,9 @@ export function setupReview(value, mode = 'holo') {
     burn: 0, token: 0, malfunction: 0, done: k !== i, onPress: null,
   }))
   const wide = SHRINES[i].team
-  const position = wide ? [0, 2.8, 10.5] : mode === 'holo' ? [0.15, 2.15, 3.1] : mode === 'artifact' ? [-1.0, 2.35, 2.2] : [0, 2.7, 6.8]
-  const look = wide ? [0, 2.1, -0.2] : mode === 'holo' ? [0, 1.95, 0] : mode === 'artifact' ? [-1.1, 2.1, -0.35] : [0, 2.3, -0.2]
-  cam.pos.copy(toWorld(i, position))
-  cam.look.copy(toWorld(i, look))
+  const frame = shrineFrame(wide)
+  cam.pos.copy(toWorld(i, frame.position))
+  cam.look.copy(toWorld(i, frame.target))
   cam.shake = 0
   cam.parallax = 0
   cam.fovKick = 0

@@ -6,7 +6,8 @@ import { setS, getS } from './state'
 import { audio } from './audio'
 import { SHRINES } from './config/shrines'
 import { EVENT } from './config/event'
-import { toWorld, SHRINE_POS, V_MASK, FF_MEMBER_X, TV_POS, FF_X } from './config/layout'
+import { toWorld, SHRINE_POS, V_MASK, TV_POS, FF_X } from './config/layout'
+import { shrineFrame } from './config/framing'
 import { composeParchment } from './lib/parchment'
 
 // The director owns the story: every scene is a deterministic GSAP timeline over world.js values.
@@ -220,15 +221,18 @@ export const director = {
     return s
   },
 
-  // Walk up to a shrine that is still only its button, standing in a pool of light.
+  // Settle at the full-exhibit view while the shrine is still dormant. All later
+  // stages keep this composition rather than pushing into its small models.
   async approach(i) {
     const cfg = SHRINES[i]
     const rt = world.shrines[i]
     this.focusShrine(i, cfg.color, true)
     setS({ shrineIndex: i })
-    const btn = cfg.team ? [[0, 1.75, 3.1], [0, 1.0, 0.45]] : [[0, 1.8, 3.4], [0, 1.12, 1.0]]
+    const frame = shrineFrame(cfg.team)
+    cam.parallax = 0
+    cam.fovKick = 0
     const tl = gsap.timeline()
-    tl.add(camTo(toWorld(i, btn[0]), toWorld(i, btn[1]), 3.2), 0)
+    tl.add(camTo(toWorld(i, frame.position), toWorld(i, frame.target), 3.2), 0)
     tl.to(world.hall, { keyOn: 0, duration: 0.5 }, 0)
     tl.to(world.hall, { keyOn: 0.8, duration: 1.4 }, 1.4)
     tl.call(() => caption(cfg.title, 'shrine'), null, 1.9)
@@ -247,8 +251,8 @@ export const director = {
     if (rt && rt.ready && rt.onPress) rt.onPress()
   },
 
-  // The button wakes the shrine: stone rises out of the floor around it while the camera pulls back.
-  unfurl(tl, i, wide, look) {
+  // The shrine rises inside the settled wide composition.
+  unfurl(tl, i) {
     const rt = world.shrines[i]
     const cfg = SHRINES[i]
     tl.call(() => {
@@ -258,8 +262,7 @@ export const director = {
     }, null, 0)
     tl.to(rt, { pressed: 1, duration: 0.1, yoyo: true, repeat: 1 }, 0)
     tl.to(rt, { unfurl: 1, duration: 2.8, ease: 'power2.out' }, 0.15)
-    tl.to(cam, { shake: 0.12, duration: 0.4, yoyo: true, repeat: 3 }, 0.2)
-    tl.add(camTo(toWorld(i, wide), toWorld(i, look), 2.9, 'power2.inOut'), 0.1)
+    tl.to(cam, { shake: 0.04, duration: 0.4, yoyo: true, repeat: 3 }, 0.2)
     const kt = toWorld(i, [0, 1.4, -0.3])
     const kf = toWorld(i, cfg.team ? [0, 8, 5] : [0, 7.5, 3.5])
     tl.to(world.hall.keyTarget, { x: kt.x, y: kt.y, z: kt.z, duration: 2 }, 0.4)
@@ -272,19 +275,17 @@ export const director = {
     const rt = world.shrines[i]
     const cfg = SHRINES[i]
     const profiles = {
-      strange: { back: [0.7, 2.7, 5.5], duration: 4.1, shake: 0.08, ease: 'power2.inOut', sound: 'portal' },
-      loki: { back: [-0.6, 2.2, 5.4], duration: 3.8, shake: 0.04, ease: 'none', sound: 'illusion' },
-      thor: { back: [0, 2.7, 5.7], duration: 3.1, shake: 0.38, ease: 'power1.in', sound: 'storm' },
-      ironman: { back: [0.5, 2.1, 5.1], duration: 3.2, shake: 0.12, ease: 'power2.out', sound: 'emp' },
-      cap: { back: [-0.7, 2.0, 5.3], duration: 3.4, shake: 0.24, ease: 'power1.in', sound: 'fracture' },
-      hulk: { back: [0, 2.7, 5.8], duration: 3.7, shake: 0.42, ease: 'power2.out', sound: 'impact' },
-      panther: { back: [0.6, 2.4, 5.6], duration: 3.6, shake: 0.18, ease: 'power2.in', sound: 'kinetic' },
-      spider: { back: [-0.5, 2.5, 5.5], duration: 3.9, shake: 0.06, ease: 'none', sound: 'web' },
-      ff: { back: [0, 2.8, 10.5], duration: 4.8, shake: 0.36, ease: 'power1.inOut', sound: 'four' },
+      strange: { duration: 4.1, shake: 0.04, ease: 'power2.inOut', sound: 'portal' },
+      loki: { duration: 3.8, shake: 0.02, ease: 'none', sound: 'illusion' },
+      thor: { duration: 3.1, shake: 0.12, ease: 'power1.in', sound: 'storm' },
+      ironman: { duration: 3.2, shake: 0.05, ease: 'power2.out', sound: 'emp' },
+      cap: { duration: 3.4, shake: 0.08, ease: 'power1.in', sound: 'fracture' },
+      hulk: { duration: 3.7, shake: 0.14, ease: 'power2.out', sound: 'impact' },
+      panther: { duration: 3.6, shake: 0.06, ease: 'power2.in', sound: 'kinetic' },
+      spider: { duration: 3.9, shake: 0.03, ease: 'none', sound: 'web' },
+      ff: { duration: 4.8, shake: 0.12, ease: 'power1.inOut', sound: 'four' },
     }
     const profile = profiles[cfg.id]
-    const back = profile.back
-    tl.add(camTo(toWorld(i, back), toWorld(i, [0, 1.6, 0]), 1.6), at)
     tl.call(() => {
       if (profile.sound === 'portal') { audio.whoosh(2.3); audio.shatter() }
       else if (profile.sound === 'illusion') { audio.glitch(); audio.whoosh(1.8) }
@@ -312,20 +313,15 @@ export const director = {
     await this.approach(i)
     const D = cfg.holoDuration || 6.2
     const tl = gsap.timeline()
-    const U = this.unfurl(tl, i, [0, 2.1, 5.0], [0, 2.0, -0.3])
+    const U = this.unfurl(tl, i)
     // the reconstruction
     tl.call(() => audio.holoOn(), null, U)
     tl.to(world.hall, { holoOn: 1, duration: 0.6 }, U)
-    tl.add(camTo(toWorld(i, [0.2, 2.15, 2.7]), toWorld(i, [0, 1.55, 0]), 1.8), U - 0.2)
     tl.to(rt, { holo: 1, duration: D, ease: 'none' }, U + 0.2)
     tl.call(() => audio.glitch(), null, U + 0.2 + D * 0.66)
     tl.call(() => caption(null), null, U + D - 0.2)
     // the relic performs
     const T = U + 0.2 + D
-    tl.add(camTo(toWorld(i, [-1.0, 2.35, 2.2]), toWorld(i, [-1.1, 2.1, -0.35]), 1.1), T - 0.6)
-    if (['strange', 'thor', 'cap'].includes(cfg.id)) {
-      tl.add(camTo(toWorld(i, [-0.65, 2.6, 4.0]), toWorld(i, [-0.45, 2.25, -0.3]), 1.35), T + 0.45)
-    }
     tl.call(() => audio.whoosh(1.2), null, T + 0.3)
     tl.call(() => audio.metalHit(), null, T + 1.6)
     tl.to(rt, { transform: 1, duration: 3.2, ease: 'none' }, T)
@@ -339,14 +335,12 @@ export const director = {
     await this.approach(i)
     const D = cfg.holoDuration
     const tl = gsap.timeline()
-    const U = this.unfurl(tl, i, [0, 2.4, 9.2], [0, 1.9, 0])
+    const U = this.unfurl(tl, i)
     tl.to(world.hall, { holoOn: 1, duration: 0.6 }, U)
     tl.to(rt, { holo: 1, duration: D, ease: 'none' }, U + 0.2)
     cfg.members.forEach((m, k) => {
       const [a] = FF_WINDOWS[k]
       const at = U + 0.2 + a * D
-      const x = FF_MEMBER_X[k]
-      tl.add(camTo(toWorld(i, [x * 0.9, 1.75, 2.6]), toWorld(i, [x, 1.45, 0.1]), 1.4), Math.max(U, at - 0.5))
       tl.call(() => {
         caption(m.name, 'shrine')
         audio.holoOn()
@@ -355,7 +349,6 @@ export const director = {
     })
     const M = U + 0.2 + 0.88 * D
     tl.call(() => caption(null), null, M - 0.2)
-    tl.add(camTo(toWorld(i, [0, 2.2, 8.4]), toWorld(i, [0, 1.6, 0]), 1.6), M - 0.4)
     tl.call(() => {
       audio.glitch()
       audio.alarm()

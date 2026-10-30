@@ -9,6 +9,7 @@ import { taperedTube } from '../lib/figure'
 import { bump, smooth, seg, lerp } from '../lib/util'
 import ModelAsset from './ModelAsset'
 import { buildHeroHead } from '../lib/heroHeadGeometry'
+import { world } from '../world'
 
 
 
@@ -126,6 +127,8 @@ function useCloak() {
 }
 
 function animateCloak(c, t, amp, flow = 0) {
+  if (t - (c.updatedAt ?? -Infinity) < 0.05) return
+  c.updatedAt = t
   const p = c.g.attributes.position.array
   const b = c.base
   for (let i = 0; i < p.length; i += 3) {
@@ -733,6 +736,7 @@ export function BandsRelic({ rt, burnMats }) {
   const rings = useRef()
   const coil = useRef()
   useFrame((s) => {
+    if (!world.hall.visible || rt.done || rt.unfurl === 0) return
     const t = s.clock.elapsedTime
     const a = bump(rt.transform, 0, 0.2, 0.8, 1)
     rings.current.children.forEach((r, i) => {
@@ -799,6 +803,7 @@ export function DistortionRelic({ rt, burnMats }) {
   )
   const orb = useRef()
   useFrame((s) => {
+    if (!world.hall.visible || rt.done || rt.unfurl === 0) return
     shell.uniforms.uTime.value = s.clock.elapsedTime
     const vanish = bump(rt.transform, 0.1, 0.25, 0.6, 0.8)
     shell.uniforms.uFade.value = (1 - seg(rt.burn, 0.1, 0.4)) * (1 - vanish * 0.9)
@@ -840,6 +845,7 @@ export function FlameRelic({ rt, burnMats }) {
   }))
   const embers = useMemo(() => makeEmitter(160, { color: '#ffe2a0', colorEnd: '#ff3a0a', size: 0.05, sizeEnd: 0.35 }), [])
   useFrame((s, dt) => {
+    if (!world.hall.visible || rt.done || rt.unfurl === 0) { if (embers.points.visible) embers.clear(); return }
     const flare = bump(rt.transform, 0, 0.15, 0.7, 0.9)
     M.char.emissiveIntensity = 2 + flare * 6
     if (Math.random() < dt * (10 + flare * 90)) embers.emit(1 + Math.floor(flare * 3), () => ({ p: [(Math.random() - 0.5) * 0.12, 0.3 + Math.random() * 0.3, (Math.random() - 0.5) * 0.1], v: [(Math.random() - 0.5) * 0.2, 0.3 + flare * 0.8, 0], life: 1 + Math.random() * 0.6 }))
@@ -869,6 +875,7 @@ export function RockHandRelic({ rt, burnMats }) {
     return out
   }, [])
   useFrame(() => {
+    if (!world.hall.visible || rt.done || rt.unfurl === 0) return
     const p = rt.transform
     const up = bump(p, 0.05, 0.3, 0.42, 0.48)
     fist.current.position.y = up * 0.45

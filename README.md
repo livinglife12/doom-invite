@@ -10,6 +10,7 @@ npm start
 npm run verify:visuals # rigs, poses, shared heads, uniforms and GLBs
 npm run verify:effects # particle pools, seeded bolts and effect lifecycle
 npm run verify:room    # seated contacts, statue props and flashlight discovery
+npm run verify:playback # rendering budgets, stage isolation and wide camera timelines
 ```
 
 ## The experience
@@ -42,7 +43,11 @@ The imported `public/models/mjolnir.glb` and `public/models/arc-reactor.glb` are
 | Spider-Man | Silk strands snap separately as the structure falls backward. |
 | Fantastic Four | Four effect channels and staggered falls dismantle the memorial. |
 
-Bolts use seeded branches, artifact motion follows authored curves, and particle pools update only their live prefix. Hidden holograms stop advancing, torch fixtures are instanced into three draws, and startup uses one small off-screen render plus asynchronous shader preparation. Adaptive quality ignores startup stalls and hidden tabs, then permits one sustained-performance downgrade without rebuilding scene resources.
+Shrines use one wide camera composition from approach through destruction, including the Fantastic Four. There are no button, character or artifact push-ins. The shared framing is in `src/config/framing.js`.
+
+The default balanced renderer uses DPR 1 with no shadow pass, fullscreen postprocessing, volumetric flashlight or MSAA. Explicit `?q=high` opts into shadows, a light bloom pass and DPR 1.25; `?q=low` uses DPR 0.8. Sustained slow playback can adapt downward again after a cooldown. Hidden pages pause their renderer, story clock and active audio context.
+
+Inactive scene groups exclude their lights as well as their meshes. Startup no longer renders or compiles the entire hidden world. Particle pools update only live slots, completed shrine rises become static, inactive shrine and room callbacks return early, and cloth deformation runs at 20 Hz. These reduce concrete work; browser FPS gains have not been measured.
 
 ## Internal scene verification
 

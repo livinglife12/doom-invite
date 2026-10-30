@@ -52,6 +52,7 @@ function Rifts() {
   const refs = useRef([])
   useFrame((s) => {
     const c = world.hall.collapse
+    if (c <= 0 || world.env.void <= 0.001) return
     const t = s.clock.elapsedTime
     items.forEach((it, i) => {
       const lingering = i >= 5
@@ -107,6 +108,7 @@ function Corrupted() {
   )
   useFrame((s) => {
     const c = world.hall.collapse
+    if (c <= 0 || world.env.void <= 0.001) return
     const t = s.clock.elapsedTime
     ghosts.forEach((g) => {
       const at = 0.03 + g.seed * 0.022
@@ -239,6 +241,7 @@ function Ash({ count }) {
     return { p, pos, seeds, m, base: pos.slice() }
   }, [count])
   useFrame(({ camera, clock }, dt) => {
+    if (world.hall.collapse <= 0 || world.env.void <= 0.001) return
     const t = clock.elapsedTime
     const c = world.hall.collapse
     const inHall = !world.throneVisible || world.mask.visible
@@ -278,6 +281,7 @@ function Stars({ count }) {
     return { p, m }
   }, [count])
   useFrame((s) => {
+    if (world.hall.collapse < 0.7 || world.env.void <= 0.001) return
     pts.m.opacity = smooth(0.7, 1, world.hall.collapse) * 0.8 * world.env.void
     pts.p.visible = pts.m.opacity > 0.01
     pts.p.rotation.x = s.clock.elapsedTime * 0.01

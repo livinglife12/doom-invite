@@ -43,6 +43,7 @@ function ShrineButton({ i, rt, cfg, burnMats, position, rotation }) {
   const st = useMemo(() => ({ hover: 0, press: 0, armed: false }), [])
   const halo = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ffd08a', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }), [])
   useFrame((s) => {
+    if (!world.hall.visible || rt.done || (!rt.ready && rt.unfurl === 0)) return
     const t = s.clock.elapsedTime
     const ready = rt.ready ? 1 : 0
     const press = Math.max(st.press, rt.pressed)
@@ -103,6 +104,7 @@ function ShrineButton({ i, rt, cfg, burnMats, position, rotation }) {
 
 function Clipping({ clip, seed, rt, burnMats, position, rotation = [0, 0, 0], size = [0.6, 0.84], delay = 0 }) {
   const ref = useRef()
+  const last = useRef(-1)
   const data = useMemo(() => {
     const canvas = clippingCanvas(clip, seed)
     const mat = new THREE.MeshStandardMaterial({ map: toTexture(canvas), roughness: 0.95, color: '#b8ae98', transparent: true, alphaTest: 0.45, side: THREE.DoubleSide, emissive: '#fff4dd', emissiveIntensity: 0 })
@@ -110,6 +112,8 @@ function Clipping({ clip, seed, rt, burnMats, position, rotation = [0, 0, 0], si
     return { canvas, mat }
   }, [])
   useFrame((s) => {
+    if (!world.hall.visible || rt.done || last.current === rt.unfurl) return
+    last.current = rt.unfurl
     const d = smooth(0.6 + delay * 0.6, 0.85 + delay * 0.6, rt.unfurl)
     const t = s.clock.elapsedTime
     ref.current.position.set(position[0], position[1] + (1 - d) * 2.5, position[2])
@@ -123,7 +127,7 @@ function Clipping({ clip, seed, rt, burnMats, position, rotation = [0, 0, 0], si
     setS({ inspect: { src: data.canvas.toDataURL('image/jpeg', 0.9), headline: clip.headline } })
   }
   return (
-    <mesh ref={ref} material={data.mat} onClick={onClick} castShadow>
+    <mesh ref={ref} visible={false} material={data.mat} onClick={onClick} castShadow>
       <planeGeometry args={size} />
     </mesh>
   )
@@ -152,7 +156,10 @@ function Plaque({ title, line, burnMats, position, width = 0.8 }) {
 // Unfurl: parts rise out of the floor in order when the button is pressed (rt.unfurl 0..1).
 function Rise({ rt, at = 0, dur = 0.3, depth = 3, spin = 0, children }) {
   const ref = useRef()
+  const last = useRef(-1)
   useFrame(() => {
+    if (!world.hall.visible || rt.done || last.current === rt.unfurl) return
+    last.current = rt.unfurl
     const k = smooth(at, at + dur, rt.unfurl)
     const g = ref.current
     g.visible = k > 0.001
@@ -162,12 +169,13 @@ function Rise({ rt, at = 0, dur = 0.3, depth = 3, spin = 0, children }) {
     g.scale.set(1, Math.max(0.001, k), 1)
     g.rotation.y = (1 - k) * spin
   })
-  return <group ref={ref}>{children}</group>
+  return <group ref={ref} visible={false}>{children}</group>
 }
 
 function useUnfurlDust(rt, width) {
   const dust = useMemo(() => makeEmitter(160, { color: '#8c8478', colorEnd: '#2a2723', size: 0.5, sizeEnd: 1.6, additive: false, soft: 2, opacity: 0.5 }), [])
   useFrame((s, dt) => {
+    if (!world.hall.visible || rt.done) { if (dust.points.visible) dust.clear(); return }
     const u = rt.unfurl
     if (u > 0.01 && u < 0.6) dust.emit(Math.ceil(dt * 90), () => ({ p: [(Math.random() - 0.5) * width, 0.1, -1.2 + Math.random() * 2], v: [(Math.random() - 0.5) * 0.6, 0.25 + Math.random() * 0.4, (Math.random() - 0.2) * 0.5], life: 1.6 + Math.random() }))
     dust.update(dt, { drag: 1.2 })
@@ -179,6 +187,7 @@ function useUnfurlDust(rt, width) {
 function Token({ rt, cfg, position }) {
   const ref = useRef()
   useFrame((s) => {
+    if (!world.hall.visible || rt.burn < 0.55 || rt.token >= 0.999) { ref.current.visible = false; return }
     const appear = smooth(0.55, 0.9, rt.burn)
     const fly = rt.token
     ref.current.visible = appear > 0.01 && fly < 0.999
@@ -187,7 +196,7 @@ function Token({ rt, cfg, position }) {
     ref.current.rotation.y = s.clock.elapsedTime * 2 + fly * 8
   })
   return (
-    <group ref={ref}>
+    <group ref={ref} visible={false}>
       <ButtonModel style={cfg.button.style} label={cfg.button.label} />
     </group>
   )

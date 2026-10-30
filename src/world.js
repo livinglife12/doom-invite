@@ -16,11 +16,11 @@ export const world = {
   flashlight: { intensity: 0, enabled: false, lower: 0 },
   sw: { charge: 0, activated: false, vibrate: 0, flip: 0, latch: 0, sparks: 0, cable: 0, lights: 0 },
   doors: { open: 0 },
-  throneVisible: true,
+  throneVisible: false,
   hall: {
     lights: 0,
     collapse: 0,
-    visible: true,
+    visible: false,
     keyTarget: new THREE.Vector3(20, 0, -5.2),
     keyFrom: new THREE.Vector3(20, 7, -1),
     keyOn: 0,
