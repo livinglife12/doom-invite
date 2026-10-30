@@ -92,9 +92,7 @@ function Half({ side, geo, M }) {
       <mesh material={M.steelDark} position={[side * 0.57, 0.18, -0.24]} rotation={[0, side * 1.25, 0]}>
         <boxGeometry args={[0.22, 0.42, 0.04]} />
       </mesh>
-      <mesh material={M.eye} position={[side * 0.24, 0.165, frontZ(side * 0.24, 0.165) - 0.07]} rotation-z={side * 0.17}>
-        <planeGeometry args={[0.3, 0.05]} />
-      </mesh>
+      <mesh geometry={geo.parts.eye} material={M.eye} />
     </group>
   )
 }
@@ -160,6 +158,7 @@ export default function DoomMask({ quality }) {
 
   // Seed instance colours before the startup compile so the program includes instancing colour.
   useLayoutEffect(() => {
+    frags.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
     for (let i = 0; i < count; i++) frags.current.setColorAt(i, HOT)
   }, [count])
 
@@ -172,7 +171,7 @@ export default function DoomMask({ quality }) {
     const mesh = frags.current
     const fragFade = 1 - smooth(0.9, 1.0, A)
     mesh.visible = fragFade > 0.001
-    data.forEach((d, i) => {
+    if (mesh.visible) data.forEach((d, i) => {
       const k = seg(A, d.delay * 0.8, d.delay * 0.8 + 0.4)
       const e = easeInOut(k)
       const orbit = (1 - e) * (t * (0.6 + d.seed))
@@ -185,20 +184,21 @@ export default function DoomMask({ quality }) {
       _c.copy(STEEL).lerp(HOT, heat)
       mesh.setColorAt(i, _c)
     })
-    mesh.instanceMatrix.needsUpdate = true
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+    if (mesh.visible) {
+      mesh.instanceMatrix.needsUpdate = true
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+    }
 
     const solid = smooth(0.82, 1, A)
     for (const m of M.solid) {
       m.opacity = solid
-      m.transparent = solid < 1
       m.depthWrite = solid > 0.5
     }
     M.black.opacity = solid
     const o = easeInOut(mk.open)
     M.cowl.opacity = smooth(0.6, 1, A) * (1 - smooth(0.0, 0.5, mk.open) * 0.85)
     const glow = mk.glow
-    M.eye.opacity = glow * (0.75 + Math.sin(t * 6) * 0.15 + (Math.random() < 0.03 ? -0.4 : 0))
+    M.eye.opacity = glow * (0.82 + Math.sin(t * 3) * 0.06)
     eyeLight.current.intensity = glow * 3
     keyLight.current.intensity = smooth(0.3, 1, A) * 70
     rimLight.current.intensity = smooth(0.3, 1, A) * 30

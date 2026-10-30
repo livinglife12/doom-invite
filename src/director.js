@@ -5,7 +5,9 @@ import { cam, camTo } from './cam'
 import { setS, getS } from './state'
 import { audio } from './audio'
 import { SHRINES } from './config/shrines'
-import { toWorld, SHRINE_POS, V_MASK, FF_MEMBER_X, TV_POS, FF_X } from './config/layout'
+import { EVENT } from './config/event'
+import { toWorld, SHRINE_POS, V_MASK, TV_POS, FF_X } from './config/layout'
+import { shrineFrame } from './config/framing'
 import { composeParchment } from './lib/parchment'
 
 // The director owns the story: every scene is a deterministic GSAP timeline over world.js values.
@@ -64,7 +66,7 @@ export const director = {
     audio.tvClick()
     setS({ phase: 'broadcast', skip: true })
     const T = world.tv
-    const lines = ['DOOM INVITES YOU TO WITNESS HIS CONQUEST.', 'THE MULTIVERSE HAS FALLEN.', 'ENTER… AND SEE WHAT BECAME OF ITS HEROES.']
+    const lines = [EVENT.title, EVENT.subtitle, EVENT.date]
     const burst = (tl, at) => {
       tl.to(T, { static: 0.75, duration: 0.08 }, at)
       tl.to(T, { roll: '+=1', duration: 0.45, ease: 'power2.out' }, at)
@@ -181,12 +183,14 @@ export const director = {
       audio.doorGrind(4)
       audio.rumble(3)
     }, null, 4.0)
-    tl.add(camTo(V(1.2, 1.75, 4.2), V(9, 2.4, 0), 3.2), 4.2)
-    tl.call(() => caption('BEHOLD WHAT REMAINS OF YOUR HEROES.'), null, 6.4)
+    // The lit throne gets a clear establishing shot before the procession turns
+    // towards the hall. Doom is readable as a seated ruler, not a distant silhouette.
+    tl.add(camTo(V(0.9, 2.8, -13.0), V(0, 2.65, -20.8), 1.8), 3.0)
+    tl.add(camTo(V(1.2, 1.75, 4.2), V(9, 2.4, 0), 3.2), 6.0)
     tl.call(() => {
       audio.doomChord(5)
       setS({ phase: 'doors', prompt: { label: 'BEGIN THE PROCESSION', action: () => this.enterHall() } })
-    }, null, 8.2)
+    }, null, 9.6)
     run(tl)
   },
 
@@ -217,15 +221,18 @@ export const director = {
     return s
   },
 
-  // Walk up to a shrine that is still only its button, standing in a pool of light.
+  // Settle at the full-exhibit view while the shrine is still dormant. All later
+  // stages keep this composition rather than pushing into its small models.
   async approach(i) {
     const cfg = SHRINES[i]
     const rt = world.shrines[i]
     this.focusShrine(i, cfg.color, true)
     setS({ shrineIndex: i })
-    const btn = cfg.team ? [[0, 1.75, 3.1], [0, 1.0, 0.45]] : [[0, 1.8, 3.4], [0, 1.12, 1.0]]
+    const frame = shrineFrame(cfg.team)
+    cam.parallax = 0
+    cam.fovKick = 0
     const tl = gsap.timeline()
-    tl.add(camTo(toWorld(i, btn[0]), toWorld(i, btn[1]), 3.2), 0)
+    tl.add(camTo(toWorld(i, frame.position), toWorld(i, frame.target), 3.2), 0)
     tl.to(world.hall, { keyOn: 0, duration: 0.5 }, 0)
     tl.to(world.hall, { keyOn: 0.8, duration: 1.4 }, 1.4)
     tl.call(() => caption(cfg.title, 'shrine'), null, 1.9)
@@ -244,8 +251,8 @@ export const director = {
     if (rt && rt.ready && rt.onPress) rt.onPress()
   },
 
-  // The button wakes the shrine: stone rises out of the floor around it while the camera pulls back.
-  unfurl(tl, i, wide, look) {
+  // The shrine rises inside the settled wide composition.
+  unfurl(tl, i) {
     const rt = world.shrines[i]
     const cfg = SHRINES[i]
     tl.call(() => {
@@ -255,8 +262,7 @@ export const director = {
     }, null, 0)
     tl.to(rt, { pressed: 1, duration: 0.1, yoyo: true, repeat: 1 }, 0)
     tl.to(rt, { unfurl: 1, duration: 2.8, ease: 'power2.out' }, 0.15)
-    tl.to(cam, { shake: 0.12, duration: 0.4, yoyo: true, repeat: 3 }, 0.2)
-    tl.add(camTo(toWorld(i, wide), toWorld(i, look), 2.9, 'power2.inOut'), 0.1)
+    tl.to(cam, { shake: 0.04, duration: 0.4, yoyo: true, repeat: 3 }, 0.2)
     const kt = toWorld(i, [0, 1.4, -0.3])
     const kf = toWorld(i, cfg.team ? [0, 8, 5] : [0, 7.5, 3.5])
     tl.to(world.hall.keyTarget, { x: kt.x, y: kt.y, z: kt.z, duration: 2 }, 0.4)
@@ -268,15 +274,32 @@ export const director = {
   destroy(tl, i, at, big = false) {
     const rt = world.shrines[i]
     const cfg = SHRINES[i]
-    const back = cfg.team ? [0, 2.8, 10.5] : [0, 2.05, 5.2]
-    tl.add(camTo(toWorld(i, back), toWorld(i, [0, 1.6, 0]), 1.6), at)
+    const profiles = {
+      strange: { duration: 4.1, shake: 0.04, ease: 'power2.inOut', sound: 'portal' },
+      loki: { duration: 3.8, shake: 0.02, ease: 'none', sound: 'illusion' },
+      thor: { duration: 3.1, shake: 0.12, ease: 'power1.in', sound: 'storm' },
+      ironman: { duration: 3.2, shake: 0.05, ease: 'power2.out', sound: 'emp' },
+      cap: { duration: 3.4, shake: 0.08, ease: 'power1.in', sound: 'fracture' },
+      hulk: { duration: 3.7, shake: 0.14, ease: 'power2.out', sound: 'impact' },
+      panther: { duration: 3.6, shake: 0.06, ease: 'power2.in', sound: 'kinetic' },
+      spider: { duration: 3.9, shake: 0.03, ease: 'none', sound: 'web' },
+      ff: { duration: 4.8, shake: 0.12, ease: 'power1.inOut', sound: 'four' },
+    }
+    const profile = profiles[cfg.id]
     tl.call(() => {
-      audio.zap()
-      audio.burn(big ? 4.5 : 3.2)
-      audio.rumble(big ? 4 : 3)
+      if (profile.sound === 'portal') { audio.whoosh(2.3); audio.shatter() }
+      else if (profile.sound === 'illusion') { audio.glitch(); audio.whoosh(1.8) }
+      else if (profile.sound === 'storm') { audio.zap(); audio.boom(); audio.rumble(2.5) }
+      else if (profile.sound === 'emp') { audio.glitch(); audio.sparks(1.8) }
+      else if (profile.sound === 'fracture') { audio.metalHit(); audio.shatter() }
+      else if (profile.sound === 'impact') { audio.boom(); audio.rumble(3.2) }
+      else if (profile.sound === 'kinetic') { audio.charge(1); audio.whoosh(1.5); audio.charge(0) }
+      else if (profile.sound === 'web') { audio.whoosh(0.5); audio.clank(0.15) }
+      else { audio.shatter(); audio.burn(3); audio.rumble(4) }
     }, null, at + 0.3)
-    tl.to(rt, { burn: 1, duration: big ? 4.5 : 3.4, ease: 'power1.in' }, at + 0.3)
-    tl.to(cam, { shake: big ? 0.45 : 0.25, duration: 0.5, yoyo: true, repeat: big ? 7 : 5 }, at + 0.5)
+    tl.to(rt, { burn: 1, duration: profile.duration, ease: profile.ease }, at + 0.3)
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    tl.to(cam, { shake: reduced ? 0 : profile.shake, duration: 0.35, yoyo: true, repeat: big ? 7 : 5 }, at + 0.5)
     tl.to(world.hall, { keyOn: 0.25, holoOn: 0, duration: 2 }, at + 1.4)
     tl.to(rt, { token: 1, duration: 1.6, ease: 'power2.in' }, '>-0.6')
     tl.call(() => {
@@ -290,18 +313,15 @@ export const director = {
     await this.approach(i)
     const D = cfg.holoDuration || 6.2
     const tl = gsap.timeline()
-    const U = this.unfurl(tl, i, [0, 2.1, 5.0], [0, 2.0, -0.3])
+    const U = this.unfurl(tl, i)
     // the reconstruction
     tl.call(() => audio.holoOn(), null, U)
     tl.to(world.hall, { holoOn: 1, duration: 0.6 }, U)
-    tl.add(camTo(toWorld(i, [0.2, 2.15, 2.7]), toWorld(i, [0, 1.55, 0]), 1.8), U - 0.2)
     tl.to(rt, { holo: 1, duration: D, ease: 'none' }, U + 0.2)
-    tl.call(() => caption(cfg.line, 'record'), null, U + 0.6)
     tl.call(() => audio.glitch(), null, U + 0.2 + D * 0.66)
     tl.call(() => caption(null), null, U + D - 0.2)
     // the relic performs
     const T = U + 0.2 + D
-    tl.add(camTo(toWorld(i, [0.1, 2.4, 4.4]), toWorld(i, [-0.2, 2.0, -0.4]), 1.4), T - 0.3)
     tl.call(() => audio.whoosh(1.2), null, T + 0.3)
     tl.call(() => audio.metalHit(), null, T + 1.6)
     tl.to(rt, { transform: 1, duration: 3.2, ease: 'none' }, T)
@@ -315,14 +335,12 @@ export const director = {
     await this.approach(i)
     const D = cfg.holoDuration
     const tl = gsap.timeline()
-    const U = this.unfurl(tl, i, [0, 2.4, 9.2], [0, 1.9, 0])
+    const U = this.unfurl(tl, i)
     tl.to(world.hall, { holoOn: 1, duration: 0.6 }, U)
     tl.to(rt, { holo: 1, duration: D, ease: 'none' }, U + 0.2)
     cfg.members.forEach((m, k) => {
       const [a] = FF_WINDOWS[k]
       const at = U + 0.2 + a * D
-      const x = FF_MEMBER_X[k]
-      tl.add(camTo(toWorld(i, [x * 0.9, 1.75, 2.6]), toWorld(i, [x, 1.45, 0.1]), 1.4), Math.max(U, at - 0.5))
       tl.call(() => {
         caption(m.name, 'shrine')
         audio.holoOn()
@@ -331,7 +349,6 @@ export const director = {
     })
     const M = U + 0.2 + 0.88 * D
     tl.call(() => caption(null), null, M - 0.2)
-    tl.add(camTo(toWorld(i, [0, 2.2, 8.4]), toWorld(i, [0, 1.6, 0]), 1.6), M - 0.4)
     tl.call(() => {
       audio.glitch()
       audio.alarm()
@@ -356,7 +373,6 @@ export const director = {
     tl.add(camTo(V(FF_X - 7.5, 2.0, 0), V(FF_X + 4.5, 2.6, 0), 4.5), 0)
     tl.to(h, { collapse: 0.4, duration: 7, ease: 'none' }, 0)
     tl.to(cam, { shake: 0.3, duration: 2 }, 0.5)
-    tl.call(() => caption('THERE IS NOTHING LEFT TO SAVE.'), null, 1.0)
     tl.call(() => audio.wail(), null, 2.5)
     tl.call(() => caption(null), null, 5.2)
     tl.call(() => {
@@ -383,7 +399,6 @@ export const director = {
     tl.to(world.mask, { glow: 1, duration: 1.6 }, 18)
     tl.call(() => caption('RSVP.', 'final'), null, 19)
     tl.call(() => caption(null), null, 22)
-    tl.call(() => caption('SIGN YOUR NAME… IF YOU DARE.'), null, 25.6)
     tl.add(camTo(V(V_MASK.x - 5.5, V_MASK.y + 0.1, 0), V(V_MASK.x, V_MASK.y + 0.1, 0), 3.5), 25.6)
     tl.call(() => caption(null), null, 29)
     tl.call(() => {
@@ -440,7 +455,6 @@ export const director = {
     tl.call(() => audio.burn(7), null, 0.9)
     tl.to(world.page, { burn: 1, duration: 7, ease: 'power1.in' }, 0.9)
     tl.call(() => audio.fadeOut(5), null, 6)
-    tl.call(() => caption('ALL THINGS END IN DOOM.', 'final'), null, 8.6)
     tl.call(() => setS({ ended: true, prompt: { label: 'WITNESS AGAIN', action: () => window.location.reload() } }), null, 12.5)
     await run(tl)
   },

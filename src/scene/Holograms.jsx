@@ -7,6 +7,7 @@ import { buildHero } from '../lib/heroes'
 import { makeEmitter, makeBolt } from '../lib/particles'
 import { mandalaTexture, crackTexture } from '../lib/textures'
 import { clamp, seg, smooth, bump, lerp } from '../lib/util'
+import { world } from '../world'
 
 // Every hologram is a real 3D miniature: procedural rigs posed over time with a scanline/fresnel shader,
 // projected from a physical emitter. p (0..1) is the reconstruction progress driven by the director.
@@ -17,30 +18,74 @@ export function holoOn(rt, t) {
   return boot * (1 - clamp(rt.burn * 1.4))
 }
 
+// All exhibits stay mounted to avoid shader/material churn. Only the live exhibit
+// advances its rigs, bolts and particle pools; Object3D visibility alone does not
+// stop React Three Fiber's frame subscriptions.
+function holoActive(rt, root) {
+  if (!world.hall.visible || rt.done || rt.holo <= 0 || rt.burn >= 1 / 1.4) return false
+  for (let parent = root.parent; parent; parent = parent.parent) if (!parent.visible) return false
+  return true
+}
+
+function clearEmitters(emitters) {
+  for (const emitter of emitters) {
+    if (emitter.clear) emitter.clear()
+    else emitter.update(10)
+  }
+}
+
+function useHoloFrame(rt, hologram, callback) {
+  const playback = useRef({ active: false, progress: 0 })
+  useFrame((state, dt) => {
+    const was = playback.current
+    if (!holoActive(rt, hologram.g)) {
+      if (was.active) clearEmitters(hologram.emitters)
+      was.active = false
+      return
+    }
+    if (rt.holo < was.progress) {
+      clearEmitters(hologram.emitters)
+      hologram.popped?.clear()
+      if ('burst' in hologram) hologram.burst = false
+    }
+    was.active = true
+    was.progress = rt.holo
+    callback(state, Math.min(dt, 0.05))
+  })
+}
+
 export function driveHolo(mats, t, rt, on) {
   const corrupt = clamp(rt.burn * 3)
   const burnD = clamp(rt.burn * 2 - 0.15)
-  const spike = Math.random() < 0.035 ? Math.random() : 0
+  const spike = Math.random() < 0.012 ? Math.random() : 0
   const mal = rt.malfunction
   for (const m of mats) {
     const u = m.uniforms
     u.uTime.value = t
     const flick = mal > 0 && Math.random() < mal * 0.4 ? 0.2 : 1
     u.uOpacity.value = on * (m.userData.o ?? 1) * flick
-    u.uGlitch.value = 0.08 + spike * 0.6 + mal * 1.5 + corrupt * 1.2 + (m.userData.g || 0)
+    u.uGlitch.value = 0.015 + spike * 0.15 + mal * 1.5 + corrupt * 1.2 + (m.userData.g || 0)
     u.uDissolve.value = Math.max(m.userData.d || 0, burnD, smooth(0.45, 1, mal))
     u.uCorrupt.value = Math.max(corrupt, m.userData.c || 0, mal * 0.5)
     u.uGrey.value = m.userData.grey || 0
   }
 }
 
-export function Projector({ rt, color, metal, radius = 0.2, height = 1.0, children }) {
+export function Projector({ rt, color, metal, radius = 0.25, height = 1.35, children }) {
   const mats = useMemo(() => ({ beam: beamMaterial(color), ring: additive(color, 0.6) }), [color])
   const em = useMemo(() => makeEmitter(50, { color, size: 0.022, colorEnd: '#ffffff' }), [color])
   const inner = useRef()
-  const st = useMemo(() => ({ holoMats: null, base: new THREE.Vector3() }), [])
+  const root = useRef()
+  const st = useMemo(() => ({ holoMats: null, base: new THREE.Vector3(), active: false }), [])
   useFrame((s, dt) => {
     const t = s.clock.elapsedTime
+    let visible = world.hall.visible && !rt.done && rt.unfurl > 0.001
+    if (visible) for (let parent = root.current.parent; parent; parent = parent.parent) if (!parent.visible) { visible = false; break }
+    if (!visible) {
+      if (st.active) { clearEmitters([em]); st.active = false }
+      return
+    }
+    st.active = true
     const on = holoOn(rt, t)
     // Holograms are skipped entirely while off, and scan upward from the emitter when they boot.
     const g = inner.current
@@ -51,12 +96,12 @@ export function Projector({ rt, color, metal, radius = 0.2, height = 1.0, childr
         g.traverse((o) => o.material?.uniforms?.uBuild && st.holoMats.push(o.material))
       }
       g.getWorldPosition(st.base)
-      const top = st.base.y + smooth(0, 0.06, rt.holo) * 1.1 - 0.02
+      const top = st.base.y + smooth(0, 0.06, rt.holo) * height * 1.2 - 0.02
       for (const m of st.holoMats) m.uniforms.uBuild.value = top
     }
     const standby = rt.burn > 0 ? 0 : 0.06 + 0.04 * Math.sin(t * 2)
     mats.beam.uniforms.uTime.value = t
-    mats.beam.uniforms.uOpacity.value = Math.max(standby, on * 0.95)
+    mats.beam.uniforms.uOpacity.value = Math.max(standby * 0.5, on * 0.18)
     mats.ring.opacity = (0.25 + on * 0.75) * (1 - clamp(rt.burn * 2))
     if (on > 0.2 && Math.random() < dt * 40 * on) {
       em.emit(1, () => ({ p: [(Math.random() - 0.5) * radius * 1.3, 0.06, (Math.random() - 0.5) * radius * 1.3], v: [0, 0.2 + Math.random() * 0.3, 0], life: 1.6 }))
@@ -64,7 +109,7 @@ export function Projector({ rt, color, metal, radius = 0.2, height = 1.0, childr
     em.update(dt, { turbulence: 0.3, t })
   })
   return (
-    <group>
+    <group ref={root}>
       <mesh material={metal} position={[0, 0.03, 0]} castShadow>
         <cylinderGeometry args={[radius, radius * 1.18, 0.07, 32]} />
       </mesh>
@@ -75,7 +120,7 @@ export function Projector({ rt, color, metal, radius = 0.2, height = 1.0, childr
         <cylinderGeometry args={[radius * 1.7, radius * 0.55, height, 32, 1, true]} />
       </mesh>
       <primitive object={em.points} />
-      <group ref={inner} position={[0, 0.075, 0]}>
+      <group ref={inner} position={[0, 0.075, 0]} scale={1.45}>
         {children}
       </group>
     </group>
@@ -85,14 +130,15 @@ export function Projector({ rt, color, metal, radius = 0.2, height = 1.0, childr
 function useHolo(build) {
   return useMemo(() => {
     const mats = []
-    const M = (c) => {
-      const m = holoMaterial(c)
+    const M = (c, surface = true) => {
+      const m = holoMaterial(c, surface)
       mats.push(m)
       return m
     }
     const g = new THREE.Group()
     const extra = build(M, g)
-    return { g, mats, ...extra }
+    const emitters = Object.values(extra).filter(value => value?.points && typeof value.update === 'function')
+    return { g, mats, emitters, ...extra }
   }, [])
 }
 
@@ -142,7 +188,7 @@ export function StrangeHolo({ rt, color }) {
     g.add(bolt.line)
     return { fig, mat, rings, runeMat, chamber, chamberMat, crack, crackMat, shards, bolt }
   })
-  useFrame((st, dt) => {
+  useHoloFrame(rt, s, (st, dt) => {
     const t = st.clock.elapsedTime
     const p = rt.holo
     const on = holoOn(rt, t)
@@ -215,7 +261,7 @@ export function LokiHolo({ rt, color }) {
     g.add(pops.points)
     return { main, clones, bolts, pops, popped: new Set() }
   })
-  useFrame((st, dt) => {
+  useHoloFrame(rt, s, (st, dt) => {
     const t = st.clock.elapsedTime
     const p = rt.holo
     const on = holoOn(rt, t)
@@ -259,12 +305,7 @@ export function LokiHolo({ rt, color }) {
     s.main.mat.userData.c = bump(p, 0.7, 0.72, 0.75, 0.8)
     s.bolts.forEach((b) => (b.mat.opacity = on))
     s.pops.update(dt, { gravity: -0.5 })
-    driveHolo(
-      [s.main.mat, ...s.clones.map((c) => c.mat)].map((m) => m),
-      t,
-      rt,
-      on
-    )
+    driveHolo(s.mats, t, rt, on)
   })
   return <primitive object={s.g} />
 }
@@ -307,7 +348,7 @@ export function CapHolo({ rt, color }) {
     return { fig, mat, shield, shieldMat, halves, gridMat, bolts, sparks }
   })
   const base = useRef(new THREE.Vector3())
-  useFrame((st, dt) => {
+  useHoloFrame(rt, s, (st, dt) => {
     const t = st.clock.elapsedTime
     const p = rt.holo
     const on = holoOn(rt, t)
@@ -371,7 +412,7 @@ export function HulkHolo({ rt, color }) {
     })
     return { fig, mat, wave, waveMat, hoops, chainMat }
   })
-  useFrame((st) => {
+  useHoloFrame(rt, s, (st) => {
     const t = st.clock.elapsedTime
     const p = rt.holo
     const on = holoOn(rt, t)
@@ -423,13 +464,13 @@ export function ReedHolo({ rt, color, win }) {
     con.add(body, screen)
     con.position.set(0.2, 0, 0.05)
     g.add(con)
-    const coreMat = M(GREEN)
+    const coreMat = M(GREEN, false)
     const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.1, 2), coreMat)
     core.position.set(0.2, 0.25, 0.05)
     g.add(core)
     return { fig, mat, con, consoleMat, core, coreMat }
   })
-  useFrame((st) => {
+  useHoloFrame(rt, s, (st) => {
     const t = st.clock.elapsedTime
     const p = memberP(rt, win)
     const on = holoOn(rt, t)
@@ -454,7 +495,7 @@ export function SueHolo({ rt, color, win }) {
     const fig = buildHero('sue', mat)
     fig.root.scale.setScalar(0.5)
     g.add(fig.root)
-    const bubbleMat = M(color)
+    const bubbleMat = M(color, false)
     const bubble = new THREE.Mesh(new THREE.SphereGeometry(0.3, 32, 20), bubbleMat)
     bubble.position.y = 0.26
     g.add(bubble)
@@ -464,7 +505,7 @@ export function SueHolo({ rt, color, win }) {
     g.add(shards.points)
     return { fig, mat, bubble, bubbleMat, press, shards, burst: false }
   })
-  useFrame((st, dt) => {
+  useHoloFrame(rt, s, (st, dt) => {
     const t = st.clock.elapsedTime
     const p = memberP(rt, win)
     const on = holoOn(rt, t)
@@ -509,13 +550,13 @@ export function JohnnyHolo({ rt, color, win }) {
     g.add(fig.root)
     const flames = makeEmitter(220, { color: '#ffb04a', size: 0.035 })
     g.add(flames.points)
-    const waveMat = M(GREEN)
+    const waveMat = M(GREEN, false)
     const wave = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2), waveMat)
     wave.rotation.z = -Math.PI / 2
     g.add(wave)
     return { fig, mat, flames, wave, waveMat }
   })
-  useFrame((st, dt) => {
+  useHoloFrame(rt, s, (st, dt) => {
     const t = st.clock.elapsedTime
     const p = memberP(rt, win)
     const on = holoOn(rt, t)
@@ -571,7 +612,7 @@ export function BenHolo({ rt, color, win }) {
     g.add(dust.points)
     return { fig, mat, storm, cracks, crackGeo, crackMat, total: pts.length, dust, frozenAt: null }
   })
-  useFrame((st, dt) => {
+  useHoloFrame(rt, s, (st, dt) => {
     const t = st.clock.elapsedTime
     const p = memberP(rt, win)
     const on = holoOn(rt, t)
@@ -606,7 +647,7 @@ export function ThorHolo({ rt, color }) {
     const fig = buildHero('thor', mat)
     fig.root.scale.setScalar(0.62)
     g.add(fig.root)
-    const cloudMat = M(color)
+    const cloudMat = M(color, false)
     const cloud = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), cloudMat)
     cloud.position.y = 0.95
     cloud.scale.y = 0.18
@@ -620,7 +661,7 @@ export function ThorHolo({ rt, color }) {
     g.add(sparks.points)
     return { fig, mat, cloud, cloudMat, bolts, sparks }
   })
-  useFrame((st, dt) => {
+  useHoloFrame(rt, s, (st, dt) => {
     const t = st.clock.elapsedTime
     const p = rt.holo
     const on = holoOn(rt, t)
@@ -660,7 +701,7 @@ export function IronManHolo({ rt, color }) {
     g.add(fig.root)
     const thrust = makeEmitter(120, { color: '#dff6ff', colorEnd: '#ff8a3a', size: 0.03, sizeEnd: 0.08 })
     g.add(thrust.points)
-    const beamMat = M('#e8f8ff')
+    const beamMat = M('#e8f8ff', false)
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.05, 0.8, 12, 1, true), beamMat)
     beam.rotation.x = Math.PI / 2
     beam.position.set(0, 0.48, 0.46)
@@ -669,7 +710,7 @@ export function IronManHolo({ rt, color }) {
     g.add(bolt.line)
     return { fig, mat, glow, thrust, beam, beamMat, bolt }
   })
-  useFrame((st, dt) => {
+  useHoloFrame(rt, s, (st, dt) => {
     const t = st.clock.elapsedTime
     const p = rt.holo
     const on = holoOn(rt, t)
@@ -702,7 +743,7 @@ export function PantherHolo({ rt, color }) {
     const fig = buildHero('panther', mat, { glow })
     fig.root.scale.setScalar(0.6)
     g.add(fig.root)
-    const waveMat = M(color)
+    const waveMat = M(color, false)
     const wave = new THREE.Mesh(new THREE.SphereGeometry(0.3, 24, 16), waveMat)
     wave.position.y = 0.3
     g.add(wave)
@@ -713,7 +754,7 @@ export function PantherHolo({ rt, color }) {
     })
     return { fig, mat, glow, wave, waveMat, bolts }
   })
-  useFrame((st) => {
+  useHoloFrame(rt, s, (st) => {
     const t = st.clock.elapsedTime
     const p = rt.holo
     const on = holoOn(rt, t)
@@ -757,7 +798,7 @@ export function SpiderHolo({ rt, color }) {
     g.add(cut.line)
     return { fig, mat, web, webGeo, webMat, cut }
   })
-  useFrame((st) => {
+  useHoloFrame(rt, s, (st) => {
     const t = st.clock.elapsedTime
     const p = rt.holo
     const on = holoOn(rt, t)

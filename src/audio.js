@@ -185,6 +185,7 @@ class DoomAudio {
   ambience() {
     const loop = () => {
       if (!this.ctx) return
+      if (document.hidden) { this.ambTimer = setTimeout(loop, 2500); return }
       const r = Math.random()
       if (r < 0.4) this.distantClang()
       else if (r < 0.7) this.interference()

@@ -3,10 +3,13 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { SpotLight } from '@react-three/drei'
 import * as THREE from 'three'
 import { world, beam, input, litAmount, showMeshes } from '../world'
-import { stoneTex, clippingCanvas, toTexture, crackTexture, shieldTexture, emblemTexture } from '../lib/textures'
-import { holoMaterial, additive } from '../lib/materials'
-import { buildFigure, setPose } from '../lib/figure'
-import { buildMaskGeometry } from '../lib/maskShape'
+import { stoneTex, clippingCanvas, toTexture, crackTexture, emblemTexture } from '../lib/textures'
+import { holoMaterial } from '../lib/materials'
+import { setPose } from '../lib/figure'
+import { buildHero } from '../lib/heroes'
+import { buildHeroHead } from '../lib/heroHeadGeometry'
+import { Throne, DoomPresence } from './ThroneDoom'
+import HeroStatues from './HeroStatues'
 import { SHRINES } from '../config/shrines'
 import Switch from './Switch'
 import { Shield, useShieldMats } from './Relics'
@@ -21,15 +24,15 @@ function useRoomMats() {
       gold: new THREE.MeshStandardMaterial({ color: '#a8873f', roughness: 0.3, metalness: 1 }),
       crystal: new THREE.MeshStandardMaterial({ color: '#0a1a0f', emissive: '#ff9a3c', emissiveIntensity: 0.4, roughness: 0.2 }),
       cloth: new THREE.MeshStandardMaterial({ color: '#0d2214', roughness: 1 }),
-      statue: new THREE.MeshStandardMaterial({ map: stoneTex([1, 1]), color: '#77786f', roughness: 0.82, side: THREE.DoubleSide }),
+      statue: new THREE.MeshStandardMaterial({ map: stoneTex([1, 1]), color: '#96998f', roughness: 0.86 }),
       carpet: new THREE.MeshStandardMaterial({ color: '#0b2614', roughness: 1 }),
     }),
     []
   )
 }
 
-const box = (M, pos, size, mat, extra = {}) => (
-  <mesh position={pos} material={mat} castShadow receiveShadow {...extra}>
+const box = (M, pos, size, mat, { key, ...extra } = {}) => (
+  <mesh key={key} position={pos} material={mat} castShadow receiveShadow {...extra}>
     <boxGeometry args={size} />
   </mesh>
 )
@@ -45,9 +48,10 @@ export default function ThroneRoom({ quality }) {
       <Floor quality={quality} M={M} />
       <Architecture M={M} />
       <Throne M={M} />
-      <DoomPresence M={M} />
+      <DoomPresence />
+      <RoomLighting />
       <ShieldProp />
-      <Helmet M={M} />
+      <Helmet />
       <CloakStatue M={M} />
       <Cracks />
       <Papers />
@@ -116,65 +120,20 @@ function Architecture({ M }) {
   )
 }
 
-function Throne({ M }) {
-  const back = useMemo(() => {
-    const s = new THREE.Shape()
-    s.moveTo(-0.95, 0)
-    s.lineTo(0.95, 0)
-    s.lineTo(0.95, 2.6)
-    s.lineTo(0.55, 3.3)
-    s.lineTo(0, 4.3)
-    s.lineTo(-0.55, 3.3)
-    s.lineTo(-0.95, 2.6)
-    s.closePath()
-    return new THREE.ExtrudeGeometry(s, { depth: 0.32, bevelEnabled: true, bevelSize: 0.04, bevelThickness: 0.04, bevelSegments: 2 })
-  }, [])
-  const mask = useMemo(() => buildMaskGeometry(0, 12, 24), [])
-  return (
-    <group position={[0, 0.9, -21]}>
-      {box(M, [0, 0.35, 0], [1.8, 0.7, 1.3], M.throne)}
-      <mesh geometry={back} material={M.throne} position={[0, 0.7, -0.7]} castShadow />
-      {box(M, [0.95, 0.95, 0.05], [0.25, 0.5, 1.2], M.throne)}
-      {/* broken left armrest lies on the steps */}
-      {box(M, [-1.6, -0.62, 1.7], [0.25, 0.5, 1.0], M.throne, { rotation: [0.3, 0.6, 1.2] })}
-      {box(M, [0, 3.35, -0.36], [0.08, 2.2, 0.06], M.crystal)}
-      {box(M, [0.75, 2.1, -0.36], [0.06, 1.2, 0.06], M.crystal)}
-      {box(M, [-0.75, 2.1, -0.36], [0.06, 1.2, 0.06], M.crystal)}
-      <mesh geometry={mask} material={M.gold} position={[0, 3.0, -0.3]} scale={0.42} castShadow />
-    </group>
-  )
-}
-
-function DoomPresence({ M }) {
-  const eyes = useRef()
-  const mask = useMemo(() => buildMaskGeometry(0, 10, 20), [])
-  const state = useMemo(() => ({ flare: 0 }), [])
-  const p = useMemo(() => new THREE.Vector3(3.3, 2.6, -21.4), [])
-  useFrame((s, dt) => {
-    const l = litAmount(p, 1.2)
-    if (l > 0.5 && state.flare < 0.1) state.flare = 1
-    state.flare = Math.max(0, state.flare - dt * 0.35)
-    eyes.current.material.emissiveIntensity = 1.2 + state.flare * 10 + Math.sin(s.clock.elapsedTime * 1.3) * 0.3
+function RoomLighting() {
+  const rim = useRef(), key = useRef()
+  const target = useMemo(() => { const object = new THREE.Object3D(); object.position.set(0, 2.65, -20.85); object.updateMatrixWorld(); return object }, [])
+  useFrame(() => {
+    const visible = world.throneVisible ? 1 : 0
+    const room = world.sw.lights
+    rim.current.intensity = visible * (0.04 + room * 0.62)
+    key.current.intensity = visible * (0.7 + room * 48)
   })
-  return (
-    <group position={[3.3, 0.9, -21.4]} rotation-y={-0.35}>
-      <mesh material={M.cloth} position={[0, 1.15, 0]} castShadow>
-        <coneGeometry args={[0.85, 2.3, 16, 1, true]} />
-      </mesh>
-      <mesh material={M.metal} position={[0, 2.15, 0]} scale={[0.62, 0.22, 0.34]} castShadow>
-        <sphereGeometry args={[1, 16, 12]} />
-      </mesh>
-      <mesh material={M.cloth} position={[0, 2.55, -0.03]} scale={[0.28, 0.32, 0.28]}>
-        <sphereGeometry args={[1, 16, 12]} />
-      </mesh>
-      <mesh geometry={mask} material={M.metal} position={[0, 2.55, 0.12]} scale={0.2} />
-      <mesh ref={eyes} position={[0, 2.59, 0.215]}>
-        <planeGeometry args={[0.16, 0.02]} />
-        <meshStandardMaterial color="#000" emissive="#5dff8a" emissiveIntensity={1.5} />
-      </mesh>
-      <pointLight position={[0, 2.6, -1.2]} color="#2bff6a" intensity={2.5} distance={4} decay={1.5} />
-    </group>
-  )
+  return <>
+    <primitive object={target} />
+    <directionalLight ref={rim} color="#bbcbd4" position={[-4, 7, 5]} intensity={0} />
+    <spotLight ref={key} target={target} color="#e8e0cf" position={[2.4, 6.3, -14]} angle={0.46} penumbra={0.75} distance={15} decay={1.25} intensity={0} />
+  </>
 }
 
 function ShieldProp() {
@@ -182,6 +141,7 @@ function ShieldProp() {
   const mats = useShieldMats()
   const p = useMemo(() => new THREE.Vector3(-7.45, 0.75, -3.4), [])
   useFrame((s) => {
+    if (!world.throneVisible) return
     const l = litAmount(p, 1.1)
     light.current.intensity = l * 9 * (0.85 + Math.sin(s.clock.elapsedTime * 3) * 0.15)
   })
@@ -195,43 +155,38 @@ function ShieldProp() {
   )
 }
 
-function Helmet({ M }) {
-  const eye = useRef()
-  const red = useMemo(() => new THREE.MeshStandardMaterial({ color: '#6b1414', metalness: 1, roughness: 0.3 }), [])
+function Helmet() {
+  const materials = useMemo(() => ({
+    red: new THREE.MeshStandardMaterial({ color: '#842331', metalness: 0.68, roughness: 0.38 }),
+    gold: new THREE.MeshStandardMaterial({ color: '#b79957', metalness: 0.68, roughness: 0.42 }),
+    liner: new THREE.MeshStandardMaterial({ color: '#161c23', roughness: 0.8 }),
+    eye: new THREE.MeshStandardMaterial({ color: '#9fb8bf', emissive: '#99d1e0', emissiveIntensity: 0.03 }),
+  }), [])
+  const helmet = useMemo(() => {
+    const head = buildHeroHead('ironman', { primary: materials.red, secondary: materials.gold, skin: materials.red, hair: materials.liner, metal: materials.gold, eye: materials.eye }, { shadows: true })
+    head.root.name = 'fallen-ironman-helmet'
+    head.root.scale.setScalar(4.2)
+    head.root.rotation.set(0.18, 0.8, 1.12)
+    const bounds = new THREE.Box3().setFromObject(head.root)
+    head.root.position.y = 0.012 - bounds.min.y
+    return head.root
+  }, [materials])
   const p = useMemo(() => new THREE.Vector3(2.4, 0.3, -5.4), [])
-  const st = useMemo(() => ({ k: 0 }), [])
-  useFrame((s, dt) => {
-    const l = litAmount(p)
-    st.k = l > 0.45 ? Math.min(1, st.k + dt * 2) : Math.max(0, st.k - dt)
-    const flick = st.k > 0.2 && Math.random() < 0.5 ? 1 : 0.15
-    eye.current.material.emissiveIntensity = 0.05 + st.k * flick * 5
+  const state = useMemo(() => ({ lit: 0 }), [])
+  useFrame((_, dt) => {
+    if (!world.throneVisible) return
+    const target = litAmount(p) > 0.4 ? 1 : 0
+    state.lit += (target - state.lit) * Math.min(1, dt * 3)
+    materials.eye.emissiveIntensity = 0.03 + state.lit * 1.4
   })
-  return (
-    <group position={p.toArray()} rotation={[0.3, 0.9, 1.25]}>
-      <mesh material={red} scale={[0.27, 0.34, 0.3]} castShadow>
-        <sphereGeometry args={[1, 24, 18]} />
-      </mesh>
-      <mesh material={M.gold} position={[0, -0.02, 0.12]} scale={[0.22, 0.27, 0.2]}>
-        <sphereGeometry args={[1, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.6]} />
-      </mesh>
-      <mesh ref={eye} position={[0, 0.05, 0.31]}>
-        <planeGeometry args={[0.22, 0.035]} />
-        <meshStandardMaterial color="#000" emissive="#bfe8ff" emissiveIntensity={0.05} />
-      </mesh>
-    </group>
-  )
+  return <group position={[2.4, 0, -5.4]}><primitive object={helmet} /></group>
 }
 
-function useCloth(w, h, sx, sy) {
-  return useMemo(() => {
-    const g = new THREE.PlaneGeometry(w, h, sx, sy)
-    g.translate(0, -h / 2, 0)
-    const base = g.attributes.position.array.slice()
-    return { g, base }
-  }, [])
-}
+
 
 export function animateCloth(cloth, t, amp, curl = 0.25) {
+  if (t - (cloth.updatedAt ?? -Infinity) < 0.05) return
+  cloth.updatedAt = t
   const p = cloth.g.attributes.position.array
   const b = cloth.base
   for (let i = 0; i < p.length; i += 3) {
@@ -246,42 +201,34 @@ export function animateCloth(cloth, t, amp, curl = 0.25) {
 }
 
 function CloakStatue({ M }) {
-  const cloth = useCloth(1.1, 1.7, 10, 16)
-  const red = useMemo(() => new THREE.MeshStandardMaterial({ color: '#7d0d1b', roughness: 0.75, side: THREE.DoubleSide }), [])
-  const fig = useMemo(() => {
-    const f = buildFigure(M.statue, { shadows: true })
-    setPose(f.j, 'idle')
-    f.j.head.visible = false
-    f.j.lElbow.visible = false
-    f.root.scale.setScalar(2.4)
-    return f
-  }, [])
-  const p = useMemo(() => new THREE.Vector3(-5.8, 2.3, -16.2), [])
-  const st = useMemo(() => ({ twitch: 0, was: 0 }), [])
+  const red = useMemo(() => new THREE.MeshStandardMaterial({ color: '#7c2230', roughness: 0.86, side: THREE.DoubleSide }), [])
+  const figure = useMemo(() => {
+    const f = buildHero('strange', M.statue, { shadows: true, materials: { body: M.statue, accent: red, skin: M.statue, dark: M.statue, trim: M.gold, light: M.statue, headTrim: M.statue } })
+    setPose(f.j, 'cast')
+    f.root.scale.setScalar(2.65)
+    f.root.name = 'doctor-strange-sculpture'
+    const cape = f.j.cape
+    cape.geometry = cape.geometry.clone()
+    return { f, cloth: { g: cape.geometry, base: cape.geometry.attributes.position.array.slice() } }
+  }, [M, red])
+  const point = useMemo(() => new THREE.Vector3(-5.8, 2.3, -16.2), [])
+  const state = useMemo(() => ({ twitch: 0, was: 0 }), [])
   useFrame((s, dt) => {
-    const l = litAmount(p)
-    if (l > 0.4 && st.was <= 0.4) st.twitch = 1
-    st.was = l
-    st.twitch = Math.max(0, st.twitch - dt * 0.8)
-    animateCloth(cloth, s.clock.elapsedTime, 0.02 + st.twitch * 0.16 + l * 0.03)
+    if (!world.throneVisible) return
+    const light = litAmount(point)
+    if (light > 0.4 && state.was <= 0.4) state.twitch = 1
+    state.was = light
+    state.twitch = Math.max(0, state.twitch - dt * 0.8)
+    animateCloth(figure.cloth, s.clock.elapsedTime, 0.001 + state.twitch * 0.014 + light * 0.004, 0)
   })
-  return (
-    <group position={[-5.8, 0, -16.2]} rotation-y={0.5}>
-      {box(M, [0, 0.45, 0], [1.4, 0.9, 1.4], M.pillar)}
-      <group position={[0, 0.9, 0]}>
-        <primitive object={fig.root} />
-        <mesh geometry={cloth.g} material={red} position={[0, 1.95, -0.08]} castShadow />
-      </group>
-    </group>
-  )
+  return <group position={[-5.8, 0, -16.2]} rotation-y={0.38}>
+    {box(M, [0, 0.45, 0], [1.4, 0.9, 1.4], M.pillar)}
+    <group position={[0, 0.9, 0]}><primitive object={figure.f.root} /></group>
+  </group>
 }
 
 function Cracks() {
-  const mats = useMemo(() => [1, 2, 3].map((s) => additive('#ffffff', 0.5, crackTexture(s))), [])
-  useFrame((s) => {
-    const t = s.clock.elapsedTime
-    mats.forEach((m, i) => (m.opacity = (0.16 + Math.sin(t * 1.1 + i * 2) * 0.08) * (1 + world.sw.lights * 0.4)))
-  })
+  const mats = useMemo(() => [1, 2, 3].map(seed => new THREE.MeshStandardMaterial({ alphaMap: crackTexture(seed), color: '#151e18', roughness: 1, transparent: true, opacity: 0.65, depthWrite: false })), [])
   return (
     <group>
       <mesh position={[-8.98, 4.5, -9]} rotation-y={Math.PI / 2} material={mats[0]}>
@@ -319,6 +266,7 @@ function Papers() {
   }, [])
   const refs = useRef([])
   useFrame((s, dt) => {
+    if (!world.throneVisible) return
     const t = s.clock.elapsedTime
     items.forEach((it, i) => {
       const l = litAmount(it.p)
@@ -335,67 +283,18 @@ function Papers() {
   ))
 }
 
-function HeroStatues({ M }) {
-  const defs = useMemo(
-    () =>
-      [
-        { pos: [-7.1, 0, -10.6], ry: Math.PI / 2, pose: 'defiant', prop: 'shield' },
-        { pos: [7.0, 0, -16.2], ry: -Math.PI / 2, pose: 'raise', prop: 'hammer' },
-      ].map((d) => {
-        // weathered monuments to the fallen: caped, armed, and already crumbling
-        const f = buildFigure(M.statue, { shadows: true, cape: true, wings: d.prop === 'shield', bulk: d.prop === 'hammer' ? 1.25 : 1.05 })
-        setPose(f.j, d.pose)
-        f.root.scale.setScalar(4.2)
-        if (d.prop === 'shield') {
-          const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.018, 32), M.statue)
-          sh.rotation.x = Math.PI / 2
-          sh.position.set(0, -0.11, 0.05)
-          f.j.lElbow.add(sh)
-          f.j.rElbow.visible = false
-        } else {
-          const hammer = new THREE.Group()
-          const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.14, 8), M.statue)
-          handle.position.y = -0.05
-          const head = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.055, 0.055), M.statue)
-          head.position.y = -0.13
-          hammer.add(handle, head)
-          hammer.rotation.x = Math.PI
-          f.j.rHand.add(hammer)
-        }
-        const eyeMat = new THREE.MeshStandardMaterial({ color: '#000', emissive: '#7dffaa', emissiveIntensity: 0 })
-        const eyes = new THREE.Mesh(new THREE.PlaneGeometry(0.07, 0.012), eyeMat)
-        eyes.position.set(0, 0.075, 0.067)
-        f.j.head.add(eyes)
-        return { ...d, f, eyeMat, p: new THREE.Vector3(d.pos[0], 4, d.pos[2]), glow: 0 }
-      }),
-    []
-  )
-  useFrame((s, dt) => {
-    defs.forEach((d) => {
-      const l = litAmount(d.p, 1.3)
-      d.glow = l > 0.4 ? Math.min(1, d.glow + dt * 3) : Math.max(0, d.glow - dt * 0.6)
-      d.eyeMat.emissiveIntensity = d.glow * 8
-    })
-  })
-  return defs.map((d, i) => (
-    <group key={i} position={d.pos} rotation-y={d.ry}>
-      {box(M, [0, 0.4, 0], [1.6, 0.8, 1.6], M.pillar)}
-      <group position={[0, 0.8, 0]}>
-        <primitive object={d.f.root} />
-      </group>
-    </group>
-  ))
-}
+
 
 function BrokenHolo({ M }) {
   const s = useMemo(() => {
     const mat = holoMaterial('#5aa8ff')
-    const f = buildFigure(mat)
+    const f = buildHero('reed', mat)
     setPose(f.j, 'defiant')
     f.root.scale.setScalar(0.9)
     return { mat, f, p: new THREE.Vector3(5.6, 1, -18), on: 0 }
   }, [])
   useFrame((st, dt) => {
+    if (!world.throneVisible) return
     const l = litAmount(s.p, 1.2)
     s.on = l > 0.3 ? 1 : Math.max(0, s.on - dt * 1.5)
     const u = s.mat.uniforms
@@ -429,7 +328,7 @@ function Sconces({ M }) {
   const l1 = useRef()
   const l2 = useRef()
   useFrame((s) => {
-    const L = world.sw.lights
+    const L = world.throneVisible ? world.sw.lights : 0
     crystals.forEach((m, i) => {
       const on = Math.min(1, Math.max(0, L * 6 - i))
       m.emissiveIntensity = on * (3 + Math.sin(s.clock.elapsedTime * 7 + i) * 0.4)
@@ -459,6 +358,7 @@ function Doors({ M }) {
   const seam = useMemo(() => new THREE.MeshStandardMaterial({ color: '#000', emissive: '#ffb45a', emissiveIntensity: 0.6 }), [])
   const plate = useMemo(() => new THREE.MeshStandardMaterial({ color: '#1a1f1c', metalness: 0.9, roughness: 0.35, map: emblemTexture() }), [])
   useFrame((s) => {
+    if (!world.throneVisible) return
     const o = world.doors.open
     a.current.rotation.y = -o * 1.45
     b.current.rotation.y = o * 1.45
@@ -491,6 +391,7 @@ function Flashlight({ quality }) {
   const target = useMemo(() => new THREE.Object3D(), [])
   const t = useMemo(() => ({ aim: new THREE.Vector3(0, 0.6, -10), desired: new THREE.Vector3(), v2: new THREE.Vector2(), ray: new THREE.Raycaster(), right: new THREE.Vector3(), up: new THREE.Vector3() }), [])
   useFrame(({ camera, clock }, dt) => {
+    if (!world.throneVisible) { beam.on = 0; light.current.intensity = 0; return }
     const f = world.flashlight
     t.v2.set(input.x, input.y)
     t.ray.setFromCamera(t.v2, camera)
@@ -533,7 +434,7 @@ function Flashlight({ quality }) {
         radiusBottom={4.5}
         opacity={0.16}
         intensity={0}
-        volumetric={quality !== 'low'}
+        volumetric={quality === 'high'}
       />
     </>
   )

@@ -550,7 +550,7 @@ function star(g, cx, cy, R, r) {
   g.fill()
 }
 
-export function plaqueCanvas(title, line) {
+export function plaqueCanvas(title, line = '') {
   const [c, g] = makeCanvas(512, 170)
   const gr = g.createLinearGradient(0, 0, 0, 170)
   gr.addColorStop(0, '#2a2b26')
@@ -565,11 +565,11 @@ export function plaqueCanvas(title, line) {
   g.shadowColor = '#ffb45a'
   g.shadowBlur = 12
   g.font = '700 38px Cinzel, serif'
-  g.fillText(title, 256, 72, 470)
+  g.fillText(title, 256, line ? 72 : 100, 470)
   g.shadowBlur = 0
   g.fillStyle = '#c7b98a'
   g.font = 'italic 22px "IM Fell English", Georgia, serif'
-  g.fillText(line, 256, 118, 470)
+  if (line) g.fillText(line, 256, 118, 470)
   return c
 }
 

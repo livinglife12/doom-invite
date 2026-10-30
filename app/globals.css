@@ -34,7 +34,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .overlay > .veil-clear { opacity: 0; transition: opacity 2.2s ease; }
 .overlay > .veil-flash { opacity: 1; background: #f4fbff; transition: opacity .08s linear; }
 
-.loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--green-dim); letter-spacing: .6em; font-family: var(--display); animation: pulse 2s infinite; }
+.loading { position: absolute; inset: 0; display: grid; place-items: center; color: #b6d9c0; letter-spacing: .24em; font: 600 clamp(12px, 3vw, 16px) var(--display); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-delay: 0ms !important; transition-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+  .caption .word span, .subline, .prompt, .cue, .gate.in { opacity: 1; transform: none; }
+}
 
 /* gate */
 .gate { position: absolute; left: 0; right: 0; bottom: 0; height: 24vh; display: grid; place-items: center; opacity: 0; transition: opacity 3s ease; }

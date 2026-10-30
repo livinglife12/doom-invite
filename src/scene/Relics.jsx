@@ -2,11 +2,16 @@ import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { RoundedBox } from '@react-three/drei'
 import * as THREE from 'three'
-import { burnable, additive } from '../lib/materials'
+import { burnable, additive, beamMaterial } from '../lib/materials'
 import { buttonCanvas, toTexture, BUTTON_BODY, crackTexture, makeCanvas } from '../lib/textures'
 import { makeEmitter, makeBolt, camPos } from '../lib/particles'
 import { taperedTube } from '../lib/figure'
 import { bump, smooth, seg, lerp } from '../lib/util'
+import ModelAsset from './ModelAsset'
+import { buildHeroHead } from '../lib/heroHeadGeometry'
+import { world } from '../world'
+
+
 
 // Every relic has an "act": rt.transform runs 0..1 after the hologram and the relic performs
 // (the cloak flies, the shield ricochets, Mjolnir calls lightning...). Positions are local to the relic plinth top.
@@ -86,11 +91,12 @@ function useBurst(color = '#fff2c8', end = '#ff8a2a', n = 80) {
 const burst = (em, p, n = 40, speed = 1.6) => em.emit(n, () => ({ p, v: [(Math.random() - 0.5) * speed, (Math.random() - 0.3) * speed, (Math.random() - 0.5) * speed], life: 0.4 + Math.random() * 0.5 }))
 
 // Is the relic near the camera? Skip per-frame work for distant shrines.
-function useNear() {
+function useNear(rt) {
   const ref = useRef()
   const wp = useMemo(() => new THREE.Vector3(), [])
   const near = () => {
-    if (!ref.current) return false
+    if (!ref.current || rt?.done || (rt && rt.unfurl < 0.001)) return false
+    for (let parent = ref.current; parent; parent = parent.parent) if (!parent.visible) return false
     ref.current.getWorldPosition(wp)
     return Math.abs(camPos.x - wp.x) < 30
   }
@@ -100,25 +106,29 @@ function useNear() {
 // ---------- Doctor Strange: the Cloak of Levitation lifts from its bell jar and flies ----------
 function useCloak() {
   return useMemo(() => {
-    const silhouette = new THREE.SplineCurve([[0.06, 0], [0.13, -0.025], [0.2, -0.075], [0.225, -0.15], [0.235, -0.32], [0.27, -0.58], [0.34, -0.95]].map(([x, y]) => new THREE.Vector2(x, y)))
-    const g = new THREE.LatheGeometry(silhouette.getPoints(30).reverse(), 56, Math.PI * 0.06, Math.PI * 1.88)
+    const g = new THREE.PlaneGeometry(1, 1, 32, 36)
     const p = g.attributes.position
     const col = new Float32Array(p.count * 3)
     const red = new THREE.Color('#9a1022')
     const gold = new THREE.Color('#d9a743')
     for (let i = 0; i < p.count; i++) {
-      const y = p.getY(i)
-      const a = Math.atan2(p.getX(i), p.getZ(i))
-      p.setY(i, y + Math.sin(a * 6) * 0.035 * Math.max(0, -y - 0.6) * 2.5)
-      ;(y < -0.9 ? gold : red).toArray(col, i * 3)
+      const u = p.getX(i) * 2
+      const v = 0.5 - p.getY(i)
+      const y = -v * 0.95
+      p.setXYZ(i, u * (0.22 + v * 0.18), y + Math.cos(u * Math.PI * 3) * 0.018 * v * v,
+        -0.13 + u * u * 0.2 + Math.sin(u * Math.PI * 5) * 0.018 * v)
+      ;(v > 0.94 || Math.abs(u) > 0.96 ? gold : red).toArray(col, i * 3)
     }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    g.computeVertexNormals()
     const collar = new THREE.CylinderGeometry(0.24, 0.12, 0.28, 36, 4, true, Math.PI * 0.22, Math.PI * 1.56)
     return { g, base: p.array.slice(), collar }
   }, [])
 }
 
 function animateCloak(c, t, amp, flow = 0) {
+  if (t - (c.updatedAt ?? -Infinity) < 0.05) return
+  c.updatedAt = t
   const p = c.g.attributes.position.array
   const b = c.base
   for (let i = 0; i < p.length; i += 3) {
@@ -126,12 +136,8 @@ function animateCloak(c, t, amp, flow = 0) {
     const y = b[i + 1]
     const z = b[i + 2]
     const down = Math.min(1, Math.max(0, (-y - 0.12) / 0.83))
-    const a = Math.atan2(x, z)
-    const folds = Math.abs(Math.sin(a * 6.5)) * 0.03 * down
-    const wave = Math.sin(a * 4 + t * (1.4 + flow * 5) + y * 4) * (0.012 + flow * 0.05) * down + Math.sin(a * 3 - t * 2.3) * amp * down * down
-    const r = 1 + (folds + wave) / Math.max(0.06, Math.hypot(x, z))
-    p[i] = x * r
-    p[i + 2] = z * r + flow * down * down * -0.25
+    p[i] = x + Math.sin(t * 1.7 + y * 6) * amp * down
+    p[i + 2] = z + Math.sin(x * 15 + t * (1.4 + flow * 4) + y * 5) * (0.012 + flow * 0.07) * down - flow * down * down * 0.25
   }
   c.g.attributes.position.needsUpdate = true
   c.g.computeVertexNormals()
@@ -151,7 +157,7 @@ export function CloakRelic({ rt, burnMats }) {
   const jarRef = useRef()
   const fly = useRef()
   const trail = useMemo(() => makeEmitter(140, { color: '#ffb46a', colorEnd: '#a01020', size: 0.05, sizeEnd: 0.2 }), [])
-  const [ref, near] = useNear()
+  const [ref, near] = useNear(rt)
   useFrame((s, dt) => {
     if (!near()) return
     const t = s.clock.elapsedTime
@@ -211,23 +217,31 @@ export function HelmRelic({ rt, burnMats }) {
     lining: new THREE.MeshStandardMaterial({ color: '#0d1f12', roughness: 1 }),
   }))
   const geo = useMemo(() => {
-    const horn = (s) => taperedTube(new THREE.CatmullRomCurve3([new THREE.Vector3(0.12 * s, 0.07, 0.02), new THREE.Vector3(0.2 * s, 0.17, -0.02), new THREE.Vector3(0.24 * s, 0.36, -0.1), new THREE.Vector3(0.18 * s, 0.56, -0.2), new THREE.Vector3(0.09 * s, 0.68, -0.14)]), 0.034, 0.003, 40, 12)
     const blade = taperedTube(new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.05, 0.06, 0), new THREE.Vector3(0.03, 0.14, 0), new THREE.Vector3(-0.02, 0.19, 0)]), 0.014, 0.001, 16, 6)
-    return { hornL: horn(-1), hornR: horn(1), blade }
+    return { blade }
   }, [])
   const ghost = useMemo(() => additive('#ffd36b', 0), [])
+  const helmets = useMemo(() => {
+    const make = (gold, dark) => {
+      const h = buildHeroHead('loki', { primary: gold, secondary: dark, skin: dark, hair: dark, metal: gold, eye: gold }, { shadows: true, maskOnly: true })
+      h.root.scale.setScalar(2.7)
+      h.root.position.y = -0.1
+      return h.root
+    }
+    return { actual: make(M.gold, M.darkGold), copies: [make(ghost, ghost), make(ghost, ghost), make(ghost, ghost)] }
+  }, [M, ghost])
   const hover = useRef()
   const ghosts = useRef([])
   const flash = useBurst('#fff4c0', '#ffb030')
   const st = useMemo(() => ({ fired: false }), [])
-  const [ref, near] = useNear()
+  const [ref, near] = useNear(rt)
   useFrame((s, dt) => {
     if (!near()) return
     const t = s.clock.elapsedTime
     const p = rt.transform
     const rise = bump(p, 0, 0.18, 0.82, 1)
     hover.current.position.y = 0.34 + Math.sin(t * 1.2) * 0.015 + rise * 0.55
-    hover.current.rotation.y = Math.sin(t * 0.45) * 0.35 + rise * t * 2
+    hover.current.rotation.y = Math.sin(t * 0.45) * 0.25 + p * Math.PI * 2
     const split = bump(p, 0.22, 0.32, 0.7, 0.8)
     ghost.opacity = split * (0.35 + (Math.random() < 0.15 ? 0.3 : 0))
     ghosts.current.forEach((gh, k) => {
@@ -244,32 +258,15 @@ export function HelmRelic({ rt, burnMats }) {
     if (p < 0.1) st.fired = false
     flash.update(dt, { drag: 2 })
   })
-  const helm = (mat, gold, dark) => (
-    <>
-      <mesh material={gold} scale={[0.15, 0.16, 0.17]} castShadow>
-        <sphereGeometry args={[1, 32, 20, 0, Math.PI * 2, 0, Math.PI * 0.58]} />
-      </mesh>
-      <mesh material={dark} position={[0, 0.02, 0]} rotation-x={Math.PI / 2} scale={[1, 1.12, 1]}>
-        <torusGeometry args={[0.152, 0.012, 8, 40]} />
-      </mesh>
-      {[-1, 1].map((s) => (
-        <mesh key={s} material={gold} position={[s * 0.13, -0.07, 0.04]} rotation={[0, s * 0.5, 0]}>
-          <cylinderGeometry args={[0.1, 0.07, 0.15, 16, 1, true, s > 0 ? 0 : Math.PI, Math.PI * 0.55]} />
-        </mesh>
-      ))}
-      <mesh geometry={geo.hornL} material={gold} castShadow />
-      <mesh geometry={geo.hornR} material={gold} castShadow />
-    </>
-  )
   return (
     <group ref={ref}>
       <mesh material={M.velvet} position={[0, 0.07, 0]} scale={[0.32, 0.07, 0.27]} castShadow>
         <sphereGeometry args={[1, 24, 12]} />
       </mesh>
-      <group ref={hover}>{helm(M.gold, M.gold, M.darkGold)}</group>
+      <group ref={hover}><primitive object={helmets.actual} /></group>
       {[0, 1, 2].map((k) => (
         <group key={k} ref={(g) => (ghosts.current[k] = g)} visible={false}>
-          {helm(ghost, ghost, ghost)}
+          <primitive object={helmets.copies[k]} />
         </group>
       ))}
       <group position={[0.02, 0.15, 0.17]} rotation={[0, 0.35, Math.PI / 2 - 0.12]}>
@@ -292,9 +289,6 @@ export function HelmRelic({ rt, burnMats }) {
 // ---------- Thor: Mjolnir crackles, lifts, spins and slams down in a flash ----------
 export function HammerRelic({ rt, burnMats }) {
   const M = useBurn(burnMats, () => ({
-    steel: new THREE.MeshStandardMaterial({ color: '#9aa1a8', metalness: 1, roughness: 0.32 }),
-    rune: new THREE.MeshStandardMaterial({ color: '#2c3036', metalness: 1, roughness: 0.4, emissive: '#7fc8ff', emissiveIntensity: 0.2 }),
-    leather: new THREE.MeshStandardMaterial({ color: '#4a2a16', roughness: 0.85 }),
     stone: new THREE.MeshStandardMaterial({ color: '#4b4c4a', roughness: 0.95, flatShading: true }),
   }))
   const hammer = useRef()
@@ -303,7 +297,7 @@ export function HammerRelic({ rt, burnMats }) {
   const st = useMemo(() => ({ slammed: false }), [])
   const a = useMemo(() => new THREE.Vector3(), [])
   const b = useMemo(() => new THREE.Vector3(), [])
-  const [ref, near] = useNear()
+  const [ref, near] = useNear(rt)
   useFrame((s, dt) => {
     if (!near()) return
     const t = s.clock.elapsedTime
@@ -312,7 +306,6 @@ export function HammerRelic({ rt, burnMats }) {
     const h = hammer.current
     h.position.set(0, 0.38 + lift * 0.75 + Math.sin(t * 7) * 0.02 * lift, 0)
     h.rotation.set(0, lift * t * 6, lift * Math.sin(t * 3) * 0.3)
-    M.rune.emissiveIntensity = 0.2 + bump(p, 0.05, 0.2, 0.7, 0.8) * 3
     const charging = p > 0.05 && p < 0.72
     bolts.forEach((bo, k) => {
       bo.line.visible = charging && Math.random() < 0.5
@@ -335,21 +328,7 @@ export function HammerRelic({ rt, burnMats }) {
         </mesh>
       ))}
       <group ref={hammer}>
-        <RoundedBox args={[0.3, 0.17, 0.17]} radius={0.02} smoothness={3} material={M.steel} castShadow />
-        {[-0.1, 0.1].map((x) => (
-          <mesh key={x} material={M.rune} position={[x, 0, 0]}>
-            <boxGeometry args={[0.03, 0.175, 0.175]} />
-          </mesh>
-        ))}
-        <mesh material={M.leather} position={[0, 0.24, 0]}>
-          <cylinderGeometry args={[0.022, 0.024, 0.32, 12]} />
-        </mesh>
-        <mesh material={M.steel} position={[0, 0.41, 0]}>
-          <sphereGeometry args={[0.03, 12, 8]} />
-        </mesh>
-        <mesh material={M.leather} position={[0, 0.46, 0]}>
-          <torusGeometry args={[0.04, 0.007, 6, 16]} />
-        </mesh>
+        <ModelAsset url="/models/mjolnir.glb" burnMats={burnMats} size={0.72} energy={rt} />
       </group>
       {bolts.map((bo, k) => (
         <primitive key={k} object={bo.line} />
@@ -362,50 +341,44 @@ export function HammerRelic({ rt, burnMats }) {
 // ---------- Iron Man: faceplate opens, eyes ignite, the helmet hovers on repulsor glow ----------
 export function IronHelmRelic({ rt, burnMats }) {
   const M = useBurn(burnMats, () => ({
-    red: new THREE.MeshStandardMaterial({ color: '#a3141b', metalness: 0.9, roughness: 0.28 }),
-    gold: new THREE.MeshStandardMaterial({ color: '#e0b24c', metalness: 1, roughness: 0.25 }),
-    post: new THREE.MeshStandardMaterial({ color: '#16171a', metalness: 0.8, roughness: 0.4 }),
+    red: new THREE.MeshStandardMaterial({ color: '#9c1726', metalness: 0.72, roughness: 0.3 }),
+    gold: new THREE.MeshStandardMaterial({ color: '#d5a855', metalness: 0.7, roughness: 0.32 }),
+    post: new THREE.MeshStandardMaterial({ color: '#151b23', metalness: 0.6, roughness: 0.48 }),
+    eye: new THREE.MeshStandardMaterial({ color: '#c9f3ff', emissive: '#88d8ff', emissiveIntensity: 0.25 }),
   }))
-  const eye = useMemo(() => new THREE.MeshStandardMaterial({ color: '#000', emissive: '#bfefff', emissiveIntensity: 0 }), [])
-  const repulsor = useMemo(() => additive('#9fe0ff', 0), [])
+  const head = useMemo(() => {
+    const result = buildHeroHead('ironman', { primary: M.red, secondary: M.gold, skin: M.red, hair: M.post, metal: M.gold, eye: M.eye }, { shadows: true })
+    result.root.scale.setScalar(2.5)
+    return result
+  }, [M])
+  const repulsor = useMemo(() => beamMaterial('#9fe0ff'), [])
   const helm = useRef()
-  const plate = useRef()
-  const [ref, near] = useNear()
+  const [ref, near] = useNear(rt)
   useFrame((s) => {
-    if (!near()) return
-    const t = s.clock.elapsedTime
-    const p = rt.transform
+    if (!near() || rt.done) return
+    const t = s.clock.elapsedTime, p = rt.transform
     const open = bump(p, 0.02, 0.18, 0.82, 0.95)
     const hover = bump(p, 0.2, 0.35, 0.75, 0.9)
-    plate.current.position.y = 0.36 + open * 0.13
-    plate.current.rotation.x = -open * 0.5
-    helm.current.position.y = hover * 0.5 + Math.sin(t * 2.2) * 0.02 * hover
-    helm.current.rotation.y = hover * Math.sin(t * 0.8) * 0.8
-    eye.emissiveIntensity = (0.05 + smooth(0.1, 0.25, p) * 5) * (1 - smooth(0.85, 1, p) * 0.9)
-    repulsor.opacity = hover * (0.5 + Math.sin(t * 30) * 0.1)
+    if (head.faceplate) {
+      head.faceplate.position.copy(head.faceplate.userData.restPosition)
+      head.faceplate.rotation.copy(head.faceplate.userData.restRotation)
+      head.faceplate.rotation.x -= open * 1.08
+    }
+    helm.current.position.y = hover * 0.42 + Math.sin(t * 2.2) * 0.012 * hover
+    helm.current.rotation.y = hover * Math.sin(t * 0.55) * 0.45
+    M.eye.emissiveIntensity = (0.25 + smooth(0.1, 0.25, p) * 1.5) * (1 - smooth(0.85, 1, p) * 0.8)
+    repulsor.uniforms.uTime.value = t
+    repulsor.uniforms.uOpacity.value = hover * (1 - smooth(0, 0.5, rt.burn)) * 0.55
   })
   return (
     <group ref={ref}>
-      <mesh material={M.post} position={[0, 0.12, 0]}>
-        <cylinderGeometry args={[0.04, 0.12, 0.24, 16]} />
-      </mesh>
+      <mesh material={M.post} position={[0, 0.12, 0]}><cylinderGeometry args={[0.035, 0.11, 0.24, 20]} /></mesh>
+      <group position={[-0.26, 0.15, 0.04]} rotation={[0, 0.2, -0.15]}>
+        <ModelAsset url="/models/arc-reactor.glb" burnMats={burnMats} size={0.26} />
+      </group>
       <group ref={helm}>
-        <mesh material={M.red} position={[0, 0.34, -0.02]} scale={[0.15, 0.18, 0.17]} castShadow>
-          <sphereGeometry args={[1, 28, 20]} />
-        </mesh>
-        <group ref={plate} position={[0, 0.36, 0.02]}>
-          <mesh material={M.gold} position={[0, -0.03, 0.12]} scale={[0.12, 0.15, 0.06]} castShadow>
-            <sphereGeometry args={[1, 24, 16, -Math.PI / 2, Math.PI]} />
-          </mesh>
-          {[-1, 1].map((sx) => (
-            <mesh key={sx} material={eye} position={[sx * 0.045, 0.005, 0.178]} rotation-z={sx * -0.15}>
-              <boxGeometry args={[0.05, 0.012, 0.004]} />
-            </mesh>
-          ))}
-        </group>
-        <mesh material={repulsor} position={[0, 0.08, 0]} rotation-x={Math.PI}>
-          <coneGeometry args={[0.12, 0.3, 20, 1, true]} />
-        </mesh>
+        <primitive object={head.root} position={[0, 0.39, 0]} />
+        <mesh material={repulsor} position={[0, 0.12, -0.01]} rotation-x={Math.PI}><coneGeometry args={[0.09, 0.28, 24, 1, true]} /></mesh>
       </group>
     </group>
   )
@@ -505,7 +478,7 @@ export function ShieldRelic({ rt, burnMats }) {
   const sh = useRef()
   const flash = useBurst('#ffffff', '#5aa8ff', 100)
   const st = useMemo(() => ({ hit: -1 }), [])
-  const [ref, near] = useNear()
+  const [ref, near] = useNear(rt)
   useFrame((s, dt) => {
     if (!near()) return
     const t = s.clock.elapsedTime
@@ -571,7 +544,7 @@ export function ShackleRelic({ rt, burnMats }) {
   const chain = useRef()
   const dust = useBurst('#9a8f80', '#3a352e', 120)
   const st = useMemo(() => ({ snapped: false }), [])
-  const [ref, near] = useNear()
+  const [ref, near] = useNear(rt)
   useFrame((s, dt) => {
     if (!near()) return
     const t = s.clock.elapsedTime
@@ -633,15 +606,16 @@ export function ShackleRelic({ rt, burnMats }) {
 // ---------- Black Panther: the mask rises as kinetic energy ripples out ----------
 export function PantherRelic({ rt, burnMats }) {
   const M = useBurn(burnMats, () => ({
-    suit: new THREE.MeshStandardMaterial({ color: '#141317', metalness: 0.7, roughness: 0.35 }),
+    suit: new THREE.MeshStandardMaterial({ color: '#28313f', metalness: 0.55, roughness: 0.38 }),
     silver: new THREE.MeshStandardMaterial({ color: '#c9ccd3', metalness: 1, roughness: 0.25 }),
     post: new THREE.MeshStandardMaterial({ color: '#2a2530', metalness: 0.6, roughness: 0.5 }),
   }))
-  const eye = useMemo(() => new THREE.MeshStandardMaterial({ color: '#000', emissive: '#e8dcff', emissiveIntensity: 0.1 }), [])
+  const eye = useBurn(burnMats, () => ({ eye: new THREE.MeshStandardMaterial({ color: '#000', emissive: '#e8dcff', emissiveIntensity: 0.1 }) })).eye
   const rings = useMemo(() => [0, 1, 2].map(() => additive('#b78bff', 0)), [])
+  const head = useMemo(() => { const h = buildHeroHead('panther', { primary: M.suit, secondary: M.post, skin: M.suit, hair: M.post, metal: M.silver, eye }, { shadows: true }); h.root.scale.setScalar(2.5); return h }, [M, eye])
   const mask = useRef()
   const ringRefs = useRef([])
-  const [ref, near] = useNear()
+  const [ref, near] = useNear(rt)
   useFrame((s) => {
     if (!near()) return
     const t = s.clock.elapsedTime
@@ -649,7 +623,7 @@ export function PantherRelic({ rt, burnMats }) {
     const rise = bump(p, 0.02, 0.2, 0.82, 0.96)
     mask.current.position.y = 0.36 + rise * 0.4
     mask.current.rotation.y = rise * Math.sin(t) * 0.5
-    eye.emissiveIntensity = 0.1 + rise * 4
+    eye.emissiveIntensity = 0.15 + rise * 1.4
     rings.forEach((m, k) => {
       const w = seg(p, 0.25 + k * 0.15, 0.45 + k * 0.15)
       m.opacity = w > 0 && w < 1 ? (1 - w) * 0.8 : 0
@@ -676,24 +650,7 @@ export function PantherRelic({ rt, burnMats }) {
           </mesh>
         )
       })}
-      <group ref={mask}>
-        <mesh material={M.suit} scale={[0.13, 0.16, 0.14]} castShadow>
-          <sphereGeometry args={[1, 28, 20]} />
-        </mesh>
-        {[-1, 1].map((s) => (
-          <mesh key={s} material={M.suit} position={[s * 0.07, 0.15, -0.01]} rotation-z={-s * 0.3}>
-            <coneGeometry args={[0.035, 0.08, 8]} />
-          </mesh>
-        ))}
-        {[-1, 1].map((s) => (
-          <mesh key={s} material={eye} position={[s * 0.045, 0.03, 0.128]} rotation={[0, s * 0.3, s * -0.35]}>
-            <planeGeometry args={[0.05, 0.022]} />
-          </mesh>
-        ))}
-        <mesh material={M.silver} position={[0, 0.06, 0.1]} rotation-x={-0.6} scale={[1, 1, 0.4]}>
-          <torusGeometry args={[0.06, 0.004, 6, 24, Math.PI]} />
-        </mesh>
-      </group>
+      <group ref={mask}><primitive object={head.root} /></group>
       {rings.map((m, k) => (
         <mesh key={k} ref={(r) => (ringRefs.current[k] = r)} material={m} rotation-x={-Math.PI / 2}>
           <ringGeometry args={[0.18, 0.2, 48]} />
@@ -704,40 +661,18 @@ export function PantherRelic({ rt, burnMats }) {
 }
 
 // ---------- Spider-Man: the pinned mask shoots webs to the shrine's corners, then they snap ----------
-let webTex
-function spiderMaskTexture() {
-  if (webTex) return webTex
-  const [c, g] = makeCanvas(256, 256)
-  g.fillStyle = '#c21a24'
-  g.fillRect(0, 0, 256, 256)
-  g.strokeStyle = 'rgba(15,8,10,0.85)'
-  g.lineWidth = 1.5
-  for (let i = 0; i < 18; i++) {
-    const x = (i / 18) * 256
-    g.beginPath()
-    g.moveTo(x, 0)
-    g.lineTo(x, 256)
-    g.stroke()
-  }
-  for (let y = 10; y < 256; y += 18) {
-    g.beginPath()
-    for (let x = 0; x <= 256; x += 14) g.lineTo(x, y + Math.sin(x * 0.2) * 2)
-    g.stroke()
-  }
-  webTex = toTexture(c)
-  webTex.wrapS = webTex.wrapT = THREE.RepeatWrapping
-  return webTex
-}
+
 
 const WEB_TARGETS = [[1.9, 2.6, -0.9], [0.5, 3.3, -0.9], [2.6, 0.5, 0.9], [-0.4, 2.2, -0.7]]
 export function SpiderMaskRelic({ rt, burnMats }) {
   const M = useBurn(burnMats, () => ({
-    mask: new THREE.MeshStandardMaterial({ map: spiderMaskTexture(), roughness: 0.6 }),
+    mask: new THREE.MeshStandardMaterial({ color: '#b51c32', roughness: 0.72 }),
     lens: new THREE.MeshStandardMaterial({ color: '#f2f4f7', roughness: 0.2, metalness: 0.2, emissive: '#ffffff', emissiveIntensity: 0.15 }),
     rim: new THREE.MeshStandardMaterial({ color: '#0c0c0e', roughness: 0.5 }),
     board: new THREE.MeshStandardMaterial({ color: '#3a2618', roughness: 0.8 }),
     pin: new THREE.MeshStandardMaterial({ color: '#d0d4da', metalness: 1, roughness: 0.2 }),
   }))
+  const head = useMemo(() => { const h = buildHeroHead('spider', { primary: M.mask, secondary: M.rim, skin: M.mask, hair: M.rim, metal: M.rim, eye: M.lens }, { shadows: true }); h.root.scale.setScalar(2.6); return h }, [M])
   const webMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#f4f6ff', transparent: true, opacity: 0 }), [])
   const webs = useMemo(
     () =>
@@ -751,7 +686,7 @@ export function SpiderMaskRelic({ rt, burnMats }) {
     []
   )
   const webRefs = useRef([])
-  const [ref, near] = useNear()
+  const [ref, near] = useNear(rt)
   useFrame(() => {
     if (!near()) return
     const p = rt.transform
@@ -768,25 +703,13 @@ export function SpiderMaskRelic({ rt, burnMats }) {
   })
   return (
     <group ref={ref}>
-      <mesh material={M.board} position={[0, 0.4, -0.08]}>
+      <mesh material={M.board} position={[0, 0.4, -0.13]}>
         <boxGeometry args={[0.46, 0.56, 0.04]} />
       </mesh>
       <group position={[0, 0.4, 0]}>
-        <mesh material={M.mask} scale={[0.13, 0.17, 0.05]} castShadow>
-          <sphereGeometry args={[1, 28, 20]} />
-        </mesh>
-        {[-1, 1].map((s) => (
-          <group key={s} position={[s * 0.05, 0.03, 0.045]} rotation-z={s * 0.5}>
-            <mesh material={M.rim} scale={[0.04, 0.055, 0.01]}>
-              <sphereGeometry args={[1, 16, 10]} />
-            </mesh>
-            <mesh material={M.lens} position={[0, 0, 0.004]} scale={[0.033, 0.047, 0.008]}>
-              <sphereGeometry args={[1, 16, 10]} />
-            </mesh>
-          </group>
-        ))}
+        <primitive object={head.root} />
         {[[-0.18, 0.24], [0.18, 0.24], [-0.18, -0.24], [0.18, -0.24]].map(([x, y], k) => (
-          <mesh key={k} material={M.pin} position={[x, y, -0.04]}>
+          <mesh key={k} material={M.pin} position={[x, y, -0.1]}>
             <sphereGeometry args={[0.012, 8, 6]} />
           </mesh>
         ))}
@@ -813,6 +736,7 @@ export function BandsRelic({ rt, burnMats }) {
   const rings = useRef()
   const coil = useRef()
   useFrame((s) => {
+    if (!world.hall.visible || rt.done || rt.unfurl === 0) return
     const t = s.clock.elapsedTime
     const a = bump(rt.transform, 0, 0.2, 0.8, 1)
     rings.current.children.forEach((r, i) => {
@@ -879,6 +803,7 @@ export function DistortionRelic({ rt, burnMats }) {
   )
   const orb = useRef()
   useFrame((s) => {
+    if (!world.hall.visible || rt.done || rt.unfurl === 0) return
     shell.uniforms.uTime.value = s.clock.elapsedTime
     const vanish = bump(rt.transform, 0.1, 0.25, 0.6, 0.8)
     shell.uniforms.uFade.value = (1 - seg(rt.burn, 0.1, 0.4)) * (1 - vanish * 0.9)
@@ -920,6 +845,7 @@ export function FlameRelic({ rt, burnMats }) {
   }))
   const embers = useMemo(() => makeEmitter(160, { color: '#ffe2a0', colorEnd: '#ff3a0a', size: 0.05, sizeEnd: 0.35 }), [])
   useFrame((s, dt) => {
+    if (!world.hall.visible || rt.done || rt.unfurl === 0) { if (embers.points.visible) embers.clear(); return }
     const flare = bump(rt.transform, 0, 0.15, 0.7, 0.9)
     M.char.emissiveIntensity = 2 + flare * 6
     if (Math.random() < dt * (10 + flare * 90)) embers.emit(1 + Math.floor(flare * 3), () => ({ p: [(Math.random() - 0.5) * 0.12, 0.3 + Math.random() * 0.3, (Math.random() - 0.5) * 0.1], v: [(Math.random() - 0.5) * 0.2, 0.3 + flare * 0.8, 0], life: 1 + Math.random() * 0.6 }))
@@ -949,6 +875,7 @@ export function RockHandRelic({ rt, burnMats }) {
     return out
   }, [])
   useFrame(() => {
+    if (!world.hall.visible || rt.done || rt.unfurl === 0) return
     const p = rt.transform
     const up = bump(p, 0.05, 0.3, 0.42, 0.48)
     fist.current.position.y = up * 0.45

@@ -1,43 +1,74 @@
 # Doom Invites You
 
-A cinematic, portrait-first 3D RSVP for a Doomsday watch party. Built with Next.js, React Three Fiber, Drei, GSAP and postprocessing.
-All art and sound are generated procedurally, so there are no asset files to load.
+A cinematic, portrait-first 3D RSVP for a Doomsday watch party, built with Next.js, React Three Fiber, Drei, GSAP and postprocessing. Procedural characters, architecture and effects are combined with two locally hosted, freely licensed models: Mjolnir and an Arc Reactor. See [asset credits](docs/ASSET_CREDITS.md); the app links to `/models/LICENSES.txt`.
 
-```
+```sh
 npm install
-npm run dev        # http://localhost:3000
-npm run build && npm start
+npm run dev            # http://localhost:3000
+npm run build
+npm start
+npm run verify:visuals # rigs, poses, shared heads, uniforms and GLBs
+npm run verify:effects # particle pools, seeded bolts and effect lifecycle
+npm run verify:room    # seated contacts, statue props and flashlight discovery
+npm run verify:playback # rendering budgets, stage isolation and wide camera timelines
 ```
 
-Inside a OneDrive folder, the dev server may not notice file edits. If changes don't show up, start it with polling. In PowerShell: `$env:WATCHPACK_POLLING='true'; npm run dev`.
+## The experience
 
-## The sequence
-1. **The television**: an old set in a moonlit parlour. Turn the dial (or tap "TURN THE DIAL") and the tube warms up: a white dot, then a line, then a Latverian test card. Doom's broadcast then shows the three summons lines in black and white, and the camera dives into the screen and cuts to the dark throne room.
-2. **Flashlight**: a real `SpotLight` (with shadows on high quality) follows the mouse or a finger drag. Discoveries respond when lit: the shield glints, the cloak twitches, newspapers lift, the broken hologram flickers, statue eyes glow, and Doom's eyes flare.
-3. **Switch**: hold the beam on it for 1.2 s (ray/cone test with a charge ring). Moving away drains the charge. Tapping the switch, or the prompt that appears after 22 s, are the accessibility fallbacks. Activation runs: sparks → latch → flip → cable surge → wall lights → doors → "BEHOLD WHAT REMAINS OF YOUR HEROES."
-4. **Hall of Conquest**: nine heroes. Each shrine starts as just its button on a lectern. Press it (tap, click, or Enter/Space) and the shrine rises out of the floor around it: platform, wall, columns, arch, projector, relic, figurine, braziers and clippings (tap a clipping to read it). Its hologram replays the hero's last stand, the relic performs, then Doom's lightning burns everything back down to the button, which rises away as a trophy.
-   - Doctor Strange (`levitate`): rune shields shatter. The Cloak of Levitation flies a loop over the shrine.
-   - Loki (`glorious purpose`): illusion copies struck down one by one. The horned helm splits into golden illusions.
-   - Thor (`worthy`): calls the storm through Mjolnir; it turns green and strikes him. Mjolnir lifts, spins and slams down in lightning.
-   - Iron Man (`i am iron man`): repulsor flight, a failing unibeam, the armour powers down. The helmet opens, its eyes ignite and it hovers.
-   - Captain America (`assemble`): his shield is shot until it splits. The shield ricochets around the shrine.
-   - Hulk (`rip it apart`): chained and shrunk to a man. The shackle strains and snaps open.
-   - Black Panther (`wakanda forever`): absorbs the blows, releases a kinetic blast, struck mid-leap. The mask rises as energy rings pulse.
-   - Spider-Man (`thwip`): swings until his web is cut. The pinned mask shoots webs to the shrine's corners.
-   - Fantastic Four (`flame on`): the grand memorial. Reed, Sue, Johnny and Ben fall in turn, then all four relics act together.
-   The Thor, Iron Man, Black Panther, Spider-Man and Fantastic Four buttons were designed for this invite in the family of the four supplied ones.
-5. **Collapse**: rifts open, life-size holograms of every hero flicker back and are torn apart, debris and papers float, and the hall is pulled into a vortex.
-6. **Mask**: hundreds of white-hot fragments fly in and cool to steel, the eyes ignite, then "RSVP." / "SIGN YOUR NAME… IF YOU DARE." The faceplate opens.
-7. **Decree**: name, attend or decline, an optional message and a hand-drawn signature, then the wax seal and an acknowledgement.
-8. **Erasure**: the signed page burns from the edges in, with the signature going last. "ALL THINGS END IN DOOM." Then "WITNESS AGAIN".
+1. Turn the television dial to receive the broadcast and event information.
+2. Explore the throne room with a mouse- or touch-controlled flashlight. Hold its beam on the switch to activate it; tapping and a delayed prompt provide alternatives.
+3. Enter the hall and activate nine exhibits. Each reveals its architecture, artifact, figurine, clippings and animated hologram before its own destruction sequence.
+4. The hall collapses into the mask assembly, followed by the RSVP form and signature.
+5. The signed page burns away; the invitation can then be replayed.
 
-SKIP (top right) jumps past the current sequence; SOUND toggles audio. Quality is auto-detected; force it with `?q=low|mid|high`.
+The main captions and plaques identify characters by their names. The broadcast presents party information without repeated epithets and boast captions. SKIP advances the current sequence; SOUND toggles audio. Quality is detected automatically and can be forced with `?q=low|mid|high`.
+
+## Characters, artifacts and effects
+
+Doom now sits centrally on an intact throne, with supported forearms, grounded boots, silver armor, a green hood/tunic/cape and paired clasps. Captain America and Thor are carved sculptures facing incoming visitors, with a readable shield face and lowered Mjolnir. The room's Strange sculpture is intact, and the discarded Iron Man helmet shares the canonical head geometry. See [throne-room accuracy notes](docs/THRONE_ROOM.md).
+
+All 12 character bodies remain stylized articulated rigs with individual proportions, costume palettes, emblems and signature props. Their heads use a shared geometry system with distinct face, hair, helmet and mask shapes. Iron Man, Black Panther, Spider-Man and Loki artifacts reuse that head geometry so the display objects agree with their characters. Holograms use a shaded core and restrained scanlines; larger displays and softer projection cones preserve costume detail.
+
+The imported `public/models/mjolnir.glb` and `public/models/arc-reactor.glb` are centered, normalized and merged by material. Per-exhibit materials isolate each dissolve. Doom's sharper mask geometry is cached and uses approximately 16,088 triangles across its complete mesh, halves and assembly parts, down from 59,164.
+
+| Exhibit | Destruction treatment |
+| --- | --- |
+| Doctor Strange | Contracting portals draw the structure inward. |
+| Loki | Gold illusion fragments rise as the structure narrows away. |
+| Thor | Branched storm strikes throw columns outward. |
+| Iron Man | An EMP pulse and arcs precede staggered power-down drops. |
+| Captain America | A lateral fracture separates the structure. |
+| Hulk | A ground impact launches debris before the structure falls. |
+| Black Panther | A violet kinetic burst expands and recoils inward. |
+| Spider-Man | Silk strands snap separately as the structure falls backward. |
+| Fantastic Four | Four effect channels and staggered falls dismantle the memorial. |
+
+Shrines use one wide camera composition from approach through destruction, including the Fantastic Four. There are no button, character or artifact push-ins. The shared framing is in `src/config/framing.js`.
+
+The default balanced renderer uses DPR 1 with no shadow pass, fullscreen postprocessing, volumetric flashlight or MSAA. Explicit `?q=high` opts into shadows, a light bloom pass and DPR 1.25; `?q=low` uses DPR 0.8. Sustained slow playback can adapt downward again after a cooldown. Hidden pages pause their renderer, story clock and active audio context.
+
+Inactive scene groups exclude their lights as well as their meshes. Startup no longer renders or compiles the entire hidden world. Particle pools update only live slots, completed shrine rises become static, inactive shrine and room callbacks return early, and cloth deformation runs at 20 Hz. These reduce concrete work; browser FPS gains have not been measured.
+
+## Internal scene verification
+
+Normal visits play the introduction. There are no rendered scene selectors, review controls or sliders. For development QA only, open:
+
+```text
+http://localhost:3000/?debug&scene=ironman&mode=artifact&p=.05&q=mid
+```
+
+The `debug` parameter is required. `scene` accepts `strange`, `loki`, `thor`, `ironman`, `cap`, `hulk`, `panther`, `spider` or `ff`; `mode` accepts `holo`, `artifact` or `destruction`; optional `p` holds progress from 0 to 1. Developer-console helpers are available through `window.__doom.review`. Old `?review` links no longer bypass the introduction.
+
+See [visual review and validation limits](docs/VISUAL_REVIEW.md).
 
 ## Customise
-- **Party details**: `src/config/event.js`
-- **Heroes, headlines, button labels and colours**: `src/config/shrines.js`. Character silhouettes (costume pieces, props) are in `src/lib/heroes.js`; to use real models you own, load a GLB per hero there and return the same shape. Everything IP-specific lives here, so it can be re-skinned with original characters.
-- **Button faces** (drawn to match your four clips; originals in `public/buttons/`): `buttonCanvas` in `src/lib/textures.js`
-- **Story timing / camera**: `src/director.js`
-- **RSVPs** are POSTed to `/api/rsvp` and appended to `data/rsvps.json` when self-hosted with `npm start`.
-  To list them, set `RSVP_ADMIN_KEY` and open `/api/rsvp?key=…`.
-  On serverless hosts (e.g. Vercel) the file isn't persistent, so set `NEXT_PUBLIC_RSVP_ENDPOINT` to a form service or your own endpoint.
+
+- **Party details**: `src/config/event.js`.
+- **Exhibit content**: `src/config/shrines.js`.
+- **Characters**: `src/lib/heroes.js`, `src/lib/figure.js` and `src/lib/heroHeadGeometry.js`. Preserve the `{ root, j, parts }` interface when replacing a rig.
+- **Artifacts / imported models**: `src/scene/Relics.jsx` and `src/scene/ModelAsset.jsx`. Preserve the [CC BY 3.0 attribution](docs/ASSET_CREDITS.md).
+- **Altar architecture / destruction**: `src/scene/Shrine.jsx` and `src/scene/AltarDestruction.jsx`.
+- **Particles / bolts**: `src/lib/particles.js`.
+- **Story timing / camera**: `src/director.js`; internal QA framing is in `src/review.js`.
+- **Button faces**: `buttonCanvas` in `src/lib/textures.js`; original clips are in `public/buttons/`.
+- **RSVP delivery**: POST `/api/rsvp` appends to `data/rsvps.json` when self-hosted. Set `RSVP_ADMIN_KEY` to inspect submissions through `/api/rsvp?key=...`. Serverless files are not persistent; configure `NEXT_PUBLIC_RSVP_ENDPOINT` for a persistent external form service or backend.

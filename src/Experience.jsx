@@ -8,9 +8,10 @@ import { director } from './director'
 import { cam } from './cam'
 import { audio } from './audio'
 import gsap from 'gsap'
-import { detectQuality } from './lib/quality'
+import { detectQuality, QUALITY_BUDGETS } from './lib/quality'
 import World from './scene/World'
 import Overlay from './ui/Overlay'
+import { setupReview, playReview, seekReview } from './review'
 
 export default function Experience() {
   const [ready, setReady] = useState(false)
@@ -19,10 +20,10 @@ export default function Experience() {
   const [shadows, setShadows] = useState(null)
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'production' || location.search.includes('debug')) window.__doom = { useStore, world, director, cam, input, audio, gsap }
+    if (process.env.NODE_ENV !== 'production' || new URLSearchParams(location.search).has('debug')) window.__doom = { useStore, world, director, cam, input, audio, gsap, review: { setupReview, playReview, seekReview } }
     const q = detectQuality()
     setS({ quality: q })
-    setShadows(q === 'high')
+    setShadows(QUALITY_BUDGETS[q].shadows)
     // Canvas textures draw text, so wait (briefly) for the web fonts.
     const fonts = ['700 40px "Old Standard TT"', '40px "UnifrakturMaguntia"', '600 40px Cinzel', '900 40px "Cinzel Decorative"', '20px "IM Fell English"'].map((f) =>
       document.fonts.load(f).catch(() => {})
@@ -60,8 +61,8 @@ export default function Experience() {
         <Canvas
           className="gl"
           shadows={shadows}
-          dpr={quality === 'high' ? [1, 1.5] : quality === 'mid' ? [1, 1.25] : [0.8, 1]}
-          gl={{ antialias: quality === 'low', powerPreference: 'high-performance' }}
+          dpr={QUALITY_BUDGETS[quality].dpr}
+          gl={{ antialias: false, powerPreference: 'high-performance' }}
           camera={{ fov: 60, near: 0.05, far: 220, position: [0, 1.7, 5.5] }}
           onCreated={({ gl }) => {
             gl.toneMapping = THREE.ACESFilmicToneMapping

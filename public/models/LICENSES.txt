@@ -1,0 +1,19 @@
+THIRD-PARTY MODEL CREDITS
+
+mjolnir.glb
+"mjolner" by OZZYBOI
+Source: https://poly.pizza/m/dmZcQxpEZl5
+License: Creative Commons Attribution 3.0 Unported (CC BY 3.0)
+https://creativecommons.org/licenses/by/3.0/
+Changes: centered, uniformly normalized, merged by material, runtime material and lighting adjustments.
+
+arc-reactor.glb
+"Arc Reactor" by Heiko Jakob
+Source: https://poly.pizza/m/efgURjIpJbm
+License: Creative Commons Attribution 3.0 Unported (CC BY 3.0)
+https://creativecommons.org/licenses/by/3.0/
+Changes: centered, uniformly normalized, merged by material, runtime material and lighting adjustments.
+
+Downloaded and source licenses checked 29 October 2026.
+These fan-created model licenses cover the creators' contributions and do not grant ownership of Marvel characters or trademarks.
+Full attribution and reproduction notes: docs/ASSET_CREDITS.md in the source repository.

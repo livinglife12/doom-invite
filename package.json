@@ -4,7 +4,11 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
-    "start": "next start -p 3000"
+    "start": "next start -p 3000",
+    "verify:visuals": "node scripts/verify-visuals.mjs",
+    "verify:effects": "node scripts/verify-effects.mjs",
+    "verify:room": "node scripts/verify-room.mjs",
+    "verify:playback": "node scripts/verify-playback.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",

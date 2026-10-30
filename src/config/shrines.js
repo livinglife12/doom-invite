@@ -1,14 +1,12 @@
 // Shrine content. Everything IP-specific (names, headlines, button labels, colours) lives here,
 // so the hall can be re-skinned for an original tyrant and original heroes without touching the scene code.
-// Each shrine has exactly one spoken line; the title appears when you approach, the line while its hologram plays.
+// Character names identify the displays; the performances carry the story.
 // button.style picks a face design in lib/textures.js (velvet/gold/flag/purple were supplied; the rest are drawn to match).
 
 export const SHRINES = [
   {
     id: 'strange',
-    title: 'THE SORCERER SUPREME',
-    epitaph: 'His final spell was not enough.',
-    line: 'HE RAISED EVERY SHIELD HE KNEW. DOOM KNEW THEM ALL.',
+    title: 'DOCTOR STRANGE',
     color: '#ff9a3c',
     button: { label: 'levitate', style: 'velvet' },
     relic: 'cloak',
@@ -22,9 +20,7 @@ export const SHRINES = [
   },
   {
     id: 'loki',
-    title: 'THE GOD OF MISCHIEF',
-    epitaph: 'Burdened with a glorious purpose. Relieved of it.',
-    line: 'HE HID BEHIND A HUNDRED FACES. DOOM ERASED EVERY ONE.',
+    title: 'LOKI',
     color: '#ffd36b',
     button: { label: 'glorious purpose', style: 'gold' },
     relic: 'helm',
@@ -38,9 +34,7 @@ export const SHRINES = [
   },
   {
     id: 'thor',
-    title: 'THE GOD OF THUNDER',
-    epitaph: 'He called the storm. It answered Doom.',
-    line: 'HE CALLED DOWN THE STORM. IT CAME FOR HIM.',
+    title: 'THOR',
     color: '#8fd0ff',
     button: { label: 'worthy', style: 'thunder' },
     relic: 'hammer',
@@ -54,9 +48,7 @@ export const SHRINES = [
   },
   {
     id: 'ironman',
-    title: 'THE ARMOURED AVENGER',
-    epitaph: 'The suit outlived the man by eleven seconds.',
-    line: 'HIS REACTOR BURNED BRIGHTER THAN EVER. THEN IT DID NOT.',
+    title: 'IRON MAN',
     color: '#ff8a3a',
     button: { label: 'i am iron man', style: 'armor' },
     relic: 'ironhelm',
@@ -70,9 +62,7 @@ export const SHRINES = [
   },
   {
     id: 'cap',
-    title: 'THE FIRST AVENGER',
-    epitaph: 'He could do this all day. Doom had longer.',
-    line: 'HE CALLED FOR THEM TO ASSEMBLE. NO ONE CAME.',
+    title: 'CAPTAIN AMERICA',
     color: '#5aa8ff',
     button: { label: 'assemble', style: 'flag' },
     relic: 'shield',
@@ -86,9 +76,7 @@ export const SHRINES = [
   },
   {
     id: 'hulk',
-    title: 'THE STRONGEST THERE IS',
-    epitaph: 'He tried to rip it apart. It did not tear.',
-    line: 'THE ANGRIER HE GREW, THE TIGHTER THE CHAINS.',
+    title: 'HULK',
     color: '#b46bff',
     button: { label: 'rip it apart', style: 'purple' },
     relic: 'shackle',
@@ -102,9 +90,7 @@ export const SHRINES = [
   },
   {
     id: 'panther',
-    title: 'THE KING OF WAKANDA',
-    epitaph: 'The vibranium held. The king did not.',
-    line: 'HE TOOK EVERY BLOW AND GAVE IT BACK. ALMOST.',
+    title: 'BLACK PANTHER',
     color: '#b78bff',
     button: { label: 'wakanda forever', style: 'vibranium' },
     relic: 'panther',
@@ -118,9 +104,7 @@ export const SHRINES = [
   },
   {
     id: 'spider',
-    title: 'THE FRIENDLY NEIGHBOURHOOD HERO',
-    epitaph: 'He always got back up. Not this time.',
-    line: 'EVERY WEB HE SPUN, DOOM CUT.',
+    title: 'SPIDER-MAN',
     color: '#ff5a5a',
     button: { label: 'thwip', style: 'web' },
     relic: 'spidermask',
@@ -135,8 +119,7 @@ export const SHRINES = [
   {
     id: 'ff',
     team: true,
-    title: 'THE FANTASTIC FOUR',
-    epitaph: 'Doom saved his favourite for last.',
+    title: 'FANTASTIC FOUR',
     color: '#4fb3ff',
     // Designed for this invite in the same family as the supplied buttons: the team's suit and "4" emblem.
     button: { label: 'flame on', style: 'four' },
